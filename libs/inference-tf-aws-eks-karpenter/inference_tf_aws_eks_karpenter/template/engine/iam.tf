@@ -291,14 +291,17 @@ data "aws_iam_policy_document" "karpenter_controller" {
     }
   }
 
-  # Karpenter v1's EC2NodeClass reconciler + instance-profile GC controller call
-  # iam:GetInstanceProfile/ListInstanceProfiles even when instanceProfile is
-  # pre-created. Without these the NodeClass never reaches Ready and — worse — its
-  # termination finalizer can never complete, so any NodeClass that enters Terminating
-  # wedges forever (deadlocking the whole NodePool). Grant the two READ actions,
-  # scoped to this deployment's node instance profile. IAM has no VPC endpoint, so
-  # this only resolves in the NAT (enable_nat_gateway=true) posture; in endpoints-only
-  # mode NodeClass churn should be avoided.
+  # Karpenter's instance-profile GC controller calls iam:ListInstanceProfiles (and the
+  # reconciler iam:GetInstanceProfile) on a timer, even with a pre-created instanceProfile.
+  # These two READ actions are exactly what Karpenter's own default policy grants
+  # (KarpenterControllerResourceDiscoveryPolicy). The PRIMARY fix for our default
+  # endpoints-only posture is settings.isolatedVPC=true on the Karpenter release
+  # (platform_karpenter.tf), which de-registers that GC controller so it makes ZERO IAM
+  # calls (Karpenter >=1.8.3, aws/karpenter-provider-aws#8617). This grant is the
+  # complement for the NAT posture (enable_nat_gateway=true → isolatedVPC=false), where
+  # the GC controller runs and reaches IAM over NAT — it must then be authorized. Harmless
+  # in isolated mode (never called). Note: an IAM interface VPC endpoint is NOT an option
+  # in us-west-2 — IAM endpoints exist only in us-east-1 / cn-north-1 / us-gov-west-1.
   statement {
     sid       = "AllowInstanceProfileRead"
     actions   = ["iam:GetInstanceProfile"]

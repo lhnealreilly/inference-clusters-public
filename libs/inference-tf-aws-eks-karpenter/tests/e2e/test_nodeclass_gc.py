@@ -1,26 +1,25 @@
 """Gated live E2E — an EC2NodeClass can be fully deleted (its GC finalizer completes).
 
-Regression guard for the Karpenter-IAM gap the unit tests cannot reach. The template runs
-Karpenter with a PRE-CREATED instance profile and had stripped ALL instance-profile IAM
-actions on the theory that Karpenter then "never calls IAM". But Karpenter v1's EC2NodeClass
-reconciler + instance-profile GC controller call iam:GetInstanceProfile /
-iam:ListInstanceProfiles regardless. Without those grants the NodeClass's
-karpenter.k8s.aws/termination finalizer can never complete, so a deleted NodeClass wedges
-forever (deletionTimestamp set, finalizer stuck) and drags its whole NodePool to
-NodeClassTerminating / NotReady — no nodes provision. The iam.tf fix adds the two scoped
-read actions.
+Regression guard for the Karpenter instance-profile-GC wedge the unit tests cannot reach.
+Karpenter's instance-profile GC controller calls iam:ListInstanceProfiles on a timer even
+with a pre-created spec.instanceProfile. In our endpoints-only VPC (no IAM VPC endpoint —
+IAM endpoints exist only in us-east-1/cn-north-1/us-gov-west-1) that call has no route, so
+an EC2NodeClass's karpenter.k8s.aws/termination finalizer can never complete: a deleted
+NodeClass wedges forever (deletionTimestamp set) and drags its whole NodePool to
+NodeClassTerminating / NotReady — no nodes provision.
 
-What this asserts: apply a throwaway NodeClass that NO NodePool references (so no node is
-ever created/drained — this is purely the reconcile + GC path), delete it, and require the
-object to be fully GONE within a bounded window. On the OLD policy the finalizer never
-completes and the object lingers with a deletionTimestamp → this fails. On the fixed policy
-it deletes cleanly → this passes. The assertion is the durable symptom (clean deletion); we
-do not try to scrape the internal 403, which is version/log-format dependent.
+Two changes make deletion complete cleanly, one per egress posture:
+- default (endpoints-only): settings.isolatedVPC=true on the Karpenter release de-registers
+  the GC controller entirely (Karpenter >=1.8.3, aws/karpenter-provider-aws#8617) — zero IAM
+  calls, so the finalizer completes trivially.
+- NAT posture: the GC controller runs and reaches IAM over NAT; the iam.tf read-grant
+  (iam:ListInstanceProfiles / GetInstanceProfile — Karpenter's own default policy) authorizes it.
 
-NAT caveat: IAM has no VPC interface endpoint, so these reads only resolve egress in the
-enable_nat_gateway=true posture. In the default endpoints-only posture the calls still can't
-reach IAM, so NodeClass churn should be avoided there regardless — this test is meaningful
-on a NAT-enabled deployment (which the e2e clusters use).
+What this asserts (posture-agnostic, the durable symptom): apply a throwaway NodeClass that
+NO NodePool references (so no node is ever created/drained — purely the reconcile + GC
+path), delete it, and require the object to be fully GONE within a bounded window. On the
+pre-fix template it wedges (finalizer never completes) → fails. With either fix it deletes
+cleanly → passes. We do not scrape the internal 403, which is version/log-format dependent.
 
 Marked full_deployment — needs a live cluster; mutates nothing that isn't cleaned up here.
 """
@@ -101,10 +100,11 @@ def test_nodeclass_deletion_finalizer_completes(
             ).stdout
             raise AssertionError(
                 f"EC2NodeClass {PROBE} was not garbage-collected within {_DELETE_TIMEOUT_S}s — "
-                f"its termination finalizer never completed. This is the "
-                f"iam:GetInstanceProfile/ListInstanceProfiles gap: Karpenter's GC needs those "
-                f"reads even with a pre-created instanceProfile.\n--- karpenter logs ---\n"
-                f"{karpenter_logs[-2000:]}"
+                f"its termination finalizer never completed. The instance-profile GC controller "
+                f"is calling iam:ListInstanceProfiles and can't reach IAM. Expected fixes: "
+                f"settings.isolatedVPC=true (endpoints-only posture — de-registers the GC "
+                f"controller) or the iam.tf ListInstanceProfiles/GetInstanceProfile grant (NAT "
+                f"posture).\n--- karpenter logs ---\n{karpenter_logs[-2000:]}"
             )
     finally:
         # Never leave a wedged probe behind (a lingering NodeClass would fail later runs).
