@@ -277,10 +277,9 @@ data "aws_iam_policy_document" "karpenter_controller" {
   # iam:PassRole is retained (needed to launch an instance WITH the pre-created
   # instance profile), but note it is evaluated server-side by EC2 during
   # RunInstances — it is NOT an outbound IAM call from Karpenter, so it does not hit
-  # the missing-IAM-endpoint timeout. All instance-profile MANAGEMENT statements
-  # (Create/Tag/AddRole/Get) were removed: with a pre-created instanceProfile on the
-  # EC2NodeClass, Karpenter never manages profiles and never calls IAM
-  # (air-gapped)— see aws_iam_instance_profile.node.
+  # the missing-IAM-endpoint timeout. Instance-profile *management* statements
+  # (Create/Tag/AddRole) stay removed: with a pre-created instanceProfile on the
+  # EC2NodeClass, Karpenter never creates or mutates profiles.
   statement {
     sid       = "AllowPassingInstanceRole"
     actions   = ["iam:PassRole"]
@@ -290,6 +289,26 @@ data "aws_iam_policy_document" "karpenter_controller" {
       variable = "iam:PassedToService"
       values   = ["ec2.amazonaws.com"]
     }
+  }
+
+  # Karpenter v1's EC2NodeClass reconciler + instance-profile GC controller call
+  # iam:GetInstanceProfile/ListInstanceProfiles even when instanceProfile is
+  # pre-created. Without these the NodeClass never reaches Ready and — worse — its
+  # termination finalizer can never complete, so any NodeClass that enters Terminating
+  # wedges forever (deadlocking the whole NodePool). Grant the two READ actions,
+  # scoped to this deployment's node instance profile. IAM has no VPC endpoint, so
+  # this only resolves in the NAT (enable_nat_gateway=true) posture; in endpoints-only
+  # mode NodeClass churn should be avoided.
+  statement {
+    sid       = "AllowInstanceProfileRead"
+    actions   = ["iam:GetInstanceProfile"]
+    resources = [aws_iam_instance_profile.node.arn]
+  }
+
+  statement {
+    sid       = "AllowInstanceProfileList"
+    actions   = ["iam:ListInstanceProfiles"]
+    resources = ["*"]
   }
 
   statement {
