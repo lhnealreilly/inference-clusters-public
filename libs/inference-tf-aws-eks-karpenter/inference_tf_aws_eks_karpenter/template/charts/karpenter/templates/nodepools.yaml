@@ -1,5 +1,5 @@
 {{- /*
-NodePools (karpenter.sh/v1). On-demand only — no spot anywhere.
+NodePools (karpenter.sh/v1). On-demand, except the gated gpu-spot test pool.
   - cpu:   CPU inference / batch. c/m/r families, amd64.
   - gpu-g: default GPU (A10G/L4). g-families, GPU taint so only GPU-tolerating
            inference pods land; label inference/accelerator for chart targeting.
@@ -7,6 +7,9 @@ NodePools (karpenter.sh/v1). On-demand only — no spot anywhere.
            taint (inference/accelerator=nvidia-p) on top of the shared GPU taint, so
            P requires explicit opt-in on both label + toleration — cost-safe by
            default (a generic GPU pod falls to gpu-g, never provisions a P node).
+  - gpu-spot: short tests on Spot, gated. Every g + p family on the gpu NodeClass,
+           capacity-type spot only; taint + label inference/capacity=spot so only a pod
+           that opts in (toleration + capacity-type=spot selector) lands there.
 */ -}}
 {{- if .Values.cpu.enabled }}
 apiVersion: karpenter.sh/v1
@@ -124,4 +127,47 @@ spec:
   disruption:
     consolidationPolicy: {{ .Values.consolidationPolicy }}
     consolidateAfter: 1m
+{{- end }}
+{{- if .Values.gpuSpot.enabled }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-spot
+spec:
+  template:
+    metadata:
+      labels:
+        inference/capacity: spot
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: gpu
+      expireAfter: {{ .Values.expireAfter }}
+      taints:
+        # Shared GPU taint + a DISTINCT capacity taint: a pod reaches Spot only by
+        # tolerating BOTH (and selecting karpenter.sh/capacity-type=spot). The label
+        # inference/capacity=spot lets tools see Spot nodes without the Karpenter label.
+        - key: nvidia.com/gpu
+          value: "present"
+          effect: NoSchedule
+        - key: inference/capacity
+          value: "spot"
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: {{ concat .Values.gpuG.instanceFamilies .Values.gpuP.instanceFamilies | toJson }}
+  # A small cap: the pool is for short tests (template var gpu_spot_capacity).
+  limits:
+    nvidia.com/gpu: {{ .Values.gpuSpot.gpuLimit }}
+  disruption:
+    # Only empty nodes are consolidated: a running test is never moved to save money
+    # (it is interrupted by AWS at most); an empty Spot node goes away after consolidateAfter.
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: {{ .Values.gpuSpot.consolidateAfter }}
 {{- end }}
