@@ -149,11 +149,13 @@ data "aws_iam_policy_document" "hyperpod_gateway_controller_trust" {
 module "hyperpod_operator_role" {
   count = local.hyperpod_gw_enabled ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-hp-inference-exec"
-  assume_role_policy = data.aws_iam_policy_document.hyperpod_operator_trust[0].json
-  policy_arns        = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSageMakerHyperPodInferenceAccess"]
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-hp-inference-exec"
+  assume_role_policy   = data.aws_iam_policy_document.hyperpod_operator_trust[0].json
+  policy_arns          = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSageMakerHyperPodInferenceAccess"]
+  combined_tags        = local.combined_tags
 }
 
 # The operator calls sagemaker:UpdateClusterInference (EnableClusterInference) on the
@@ -190,11 +192,13 @@ resource "aws_iam_role_policy" "hyperpod_operator_pass_role" {
 module "hyperpod_gateway_controller_role" {
   count = local.hyperpod_gw_enabled ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-hp-inference-gw"
-  assume_role_policy = data.aws_iam_policy_document.hyperpod_gateway_controller_trust[0].json
-  policy_arns        = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSageMakerHyperPodInferenceGatewayAccess"]
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-hp-inference-gw"
+  assume_role_policy   = data.aws_iam_policy_document.hyperpod_gateway_controller_trust[0].json
+  policy_arns          = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSageMakerHyperPodInferenceGatewayAccess"]
+  combined_tags        = local.combined_tags
 }
 
 data "aws_iam_policy_document" "hyperpod_alb_controller_trust" {
@@ -225,10 +229,12 @@ data "aws_iam_policy_document" "hyperpod_alb_controller_trust" {
 module "hyperpod_alb_controller_role" {
   count = local.hyperpod_gw_enabled ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-hp-inference-alb"
-  assume_role_policy = data.aws_iam_policy_document.hyperpod_alb_controller_trust[0].json
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-hp-inference-alb"
+  assume_role_policy   = data.aws_iam_policy_document.hyperpod_alb_controller_trust[0].json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "hyperpod_alb_controller" {

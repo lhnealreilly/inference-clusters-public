@@ -30,6 +30,7 @@ turns on SOCI parallel mode, concurrently downloading+unpacking multi-GB GPU/ML 
         iops: {{ .Values.gpuParallelPull.ebsIops | int64 }}
 {{- end }}
 {{- end -}}
+{{- if not .Values.autoMode.enabled }}
 apiVersion: karpenter.k8s.aws/v1
 kind: EC2NodeClass
 metadata:
@@ -144,3 +145,4 @@ spec:
 {{ include "karpenter.gpuParallelPullUserData" . }}
   tags:
     karpenter.sh/discovery: {{ .Values.discoveryTag | quote }}
+{{- end }}

@@ -60,7 +60,8 @@ data "aws_iam_policy_document" "image_build_extra" {
 }
 
 module "image_build" {
-  source = "./modules/codebuild_job"
+  source               = "./modules/codebuild_job"
+  permissions_boundary = local.permissions_boundary
 
   depends_on = [null_resource.workload_repo_cleanup]
 

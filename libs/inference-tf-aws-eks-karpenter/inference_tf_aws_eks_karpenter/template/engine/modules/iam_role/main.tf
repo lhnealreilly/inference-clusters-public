@@ -1,7 +1,8 @@
 resource "aws_iam_role" "this" {
-  name               = var.role_name
-  assume_role_policy = var.assume_role_policy
-  tags               = var.combined_tags
+  name                 = var.role_name
+  assume_role_policy   = var.assume_role_policy
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.combined_tags
 }
 
 # Each attachment references aws_iam_role.this.name, so Terraform always destroys

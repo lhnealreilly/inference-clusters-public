@@ -2,7 +2,8 @@
 
 data "aws_iam_policy_document" "eks_trust" {
   statement {
-    actions = ["sts:AssumeRole"]
+    # Auto Mode: the cluster role's trust also allows sts:TagSession (auto-cluster-iam-role).
+    actions = var.enable_auto_mode ? ["sts:AssumeRole", "sts:TagSession"] : ["sts:AssumeRole"]
     principals {
       type        = "Service"
       identifiers = ["eks.amazonaws.com"]
@@ -33,20 +34,32 @@ data "aws_iam_policy_document" "pod_identity_trust" {
 # --- Roles ---
 
 module "cluster_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-cluster"
-  assume_role_policy = data.aws_iam_policy_document.eks_trust.json
-  policy_arns        = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"]
-  combined_tags      = local.combined_tags
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-cluster"
+  assume_role_policy   = data.aws_iam_policy_document.eks_trust.json
+  # AmazonEKSClusterPolicy stays first (attachment key "0") so enabling Auto Mode only
+  # appends attachments and never replaces the existing one.
+  policy_arns = concat(
+    ["arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"],
+    var.enable_auto_mode ? [
+      "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSComputePolicy",
+      "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSBlockStoragePolicyV2",
+      "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSLoadBalancingPolicy",
+      "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSNetworkingPolicy",
+    ] : [],
+  )
+  combined_tags = local.combined_tags
 }
 
 # The bootstrap MNG nodes and (later) Karpenter-launched nodes share this one
 # node role. AmazonEC2ContainerRegistryReadOnly grants the image pull; the
 # pull-through import-on-miss inline policy is added later.
 module "node_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-node"
-  assume_role_policy = data.aws_iam_policy_document.ec2_trust.json
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-node"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_trust.json
   policy_arns = [
     "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy",
     "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKS_CNI_Policy",
@@ -56,12 +69,50 @@ module "node_role" {
   combined_tags = local.combined_tags
 }
 
+# --- Auto Mode node role (enable_auto_mode only) ---
+#
+# Referenced by the NodeClasses (spec.role) and given its own EC2 access entry
+# (main.tf). The minimal worker policy + ECR pull-only are what auto-create-node-role
+# lists; the pull-through import grant and the model-store read mirror the shared node
+# role so a GPU node's cache miss can import and S3-direct weight loading still works.
+module "auto_node_role" {
+  count = var.enable_auto_mode ? 1 : 0
+
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-auto-node"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_trust.json
+  policy_arns = [
+    "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSWorkerNodeMinimalPolicy",
+    "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
+  ]
+  combined_tags = local.combined_tags
+}
+
+resource "aws_iam_role_policy" "auto_node_pullthrough" {
+  count = var.enable_auto_mode ? 1 : 0
+
+  name   = "${local.resource_name_prefix}-auto-node-pullthrough"
+  role   = module.auto_node_role[0].role_name
+  policy = data.aws_iam_policy_document.node_pullthrough.json
+}
+
+resource "aws_iam_role_policy" "auto_node_s3" {
+  count = var.enable_auto_mode ? 1 : 0
+
+  name   = "${local.resource_name_prefix}-auto-node-s3"
+  role   = module.auto_node_role[0].role_name
+  policy = data.aws_iam_policy_document.node_s3.json
+}
+
 module "ebs_csi_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-ebs-csi"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  policy_arns        = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
-  combined_tags      = local.combined_tags
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-ebs-csi"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  policy_arns          = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"]
+  combined_tags        = local.combined_tags
 }
 
 # Instance profile for Karpenter-launched nodes, PRE-CREATED here (not by Karpenter).
@@ -302,14 +353,32 @@ data "aws_iam_policy_document" "karpenter_controller" {
 # Karpenter's policy is tag-scoped (every statement carries conditions), so attach the
 # policy document directly via aws_iam_role_policy rather than through a generic module.
 module "karpenter_controller_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-karpenter"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  count = var.enable_auto_mode ? 0 : 1
+
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-karpenter"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "karpenter_controller" {
+  count = var.enable_auto_mode ? 0 : 1
+
   name   = "${local.resource_name_prefix}-karpenter-controller"
-  role   = module.karpenter_controller_role.role_name
+  role   = module.karpenter_controller_role[0].role_name
   policy = data.aws_iam_policy_document.karpenter_controller.json
+}
+
+# Existing (non-Auto-Mode) deployments keep their Karpenter controller role in place:
+# the count added for enable_auto_mode moves the address, not the resource.
+moved {
+  from = module.karpenter_controller_role
+  to   = module.karpenter_controller_role[0]
+}
+
+moved {
+  from = aws_iam_role_policy.karpenter_controller
+  to   = aws_iam_role_policy.karpenter_controller[0]
 }

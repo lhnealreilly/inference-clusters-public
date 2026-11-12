@@ -1,0 +1,22 @@
+# Partial S3 backend: state in a customer-owned bucket (DECISIONS 7: "Terraform state
+# lives in the customer's account"). OFF by default — the file extension keeps Terraform
+# from loading it, so local state and jd's own backend handling keep working.
+#
+# To switch on (before the first `terraform init` / `jd up` of a project):
+#   cp engine/backend-s3.tf.example engine/backend.tf
+#   cat > engine/backend.hcl <<'HCL'
+#   bucket         = "<customer state bucket>"
+#   key            = "<cluster prefix>/terraform.tfstate"
+#   region         = "<region>"
+#   dynamodb_table = "<lock table>"   # or: use_lockfile = true
+#   encrypt        = true
+#   kms_key_id     = "<kms key arn>"  # optional
+#   HCL
+#   export TF_CLI_ARGS_init="-backend-config=backend.hcl"   # jd runs `terraform init` itself
+#
+# jd treats an existing engine/backend.tf as "store configured" and does not write or
+# migrate its own backend.tf, so the two never collide. To go back to local state,
+# remove engine/backend.tf and run `terraform -chdir=engine init -migrate-state`.
+terraform {
+  backend "s3" {}
+}

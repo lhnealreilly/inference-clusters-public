@@ -8,7 +8,7 @@ kind: StorageClass
 metadata:
   name: ebs-gp3
   annotations:
-    storageclass.kubernetes.io/is-default-class: {{ .Values.ebs.default | quote }}
+    storageclass.kubernetes.io/is-default-class: {{ and .Values.ebs.default (not .Values.ebs.autoMode) | quote }}
 provisioner: ebs.csi.aws.com
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
@@ -16,3 +16,22 @@ reclaimPolicy: Delete
 parameters:
   type: gp3
   encrypted: "true"
+{{- if .Values.ebs.autoMode }}
+---
+# EKS Auto Mode block storage (storage_config.block_storage). Auto Mode nodes run no
+# EBS CSI add-on node plugin; this provisioner is the built-in one. Default class on
+# Auto Mode clusters, so a PVC without storageClassName lands on an Auto Mode GPU node.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-gp3-auto
+  annotations:
+    storageclass.kubernetes.io/is-default-class: {{ .Values.ebs.default | quote }}
+provisioner: ebs.csi.eks.amazonaws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"
+{{- end }}

@@ -9,6 +9,31 @@ discoveryTag: ""
 #    instances. Used instead of `role` so Karpenter makes no IAM calls.
 nodeInstanceProfile: ""
 
+# -- EKS Auto Mode (Terraform enable_auto_mode). When enabled the chart renders
+#    eks.amazonaws.com/v1 NodeClasses (cpu, gpu) instead of the EC2NodeClasses, and the
+#    SAME NodePools (names, labels, taints, limits) with eks.amazonaws.com/* requirement
+#    keys ("EKS Auto Mode uses different labels than Karpenter"). Auto Mode bundles the
+#    NVIDIA driver + device plugin and picks the (Bottlerocket-based) AMI itself.
+autoMode:
+  enabled: false
+  # -- Auto Mode node IAM role NAME (not instance profile) for NodeClass spec.role.
+  nodeRoleName: ""
+  # -- Root/ephemeral volume of cpu-NodeClass nodes (the gpu class uses blockDevice.volumeSizeGi).
+  cpuEphemeralStorageSize: 80Gi
+  # -- Auto Mode caps node lifetime at 21 days; expireAfter above (720h) exceeds it.
+  #    336h = the built-in pools' value.
+  expireAfter: 336h
+  # -- NodeClaim drain cap (Auto Mode default is 24h).
+  terminationGracePeriod: 1h
+  # -- GPU families NOT on Auto Mode's supported-instance list; dropped from every pool.
+  unsupportedFamilies: ["g7"]
+  # -- GPU pools: at most 10% of nodes disrupted at once, and NEVER for drift — a weekly
+  #    Auto Mode AMI release must not roll a node mid-run (new nodes get the new AMI).
+  gpuDisruptionBudgets:
+    - nodes: "10%"
+    - nodes: "0"
+      reasons: ["Drifted"]
+
 # -- Consolidation + churn policy shared by all NodePools.
 consolidationPolicy: WhenEmptyOrUnderutilized
 expireAfter: 720h # 30d

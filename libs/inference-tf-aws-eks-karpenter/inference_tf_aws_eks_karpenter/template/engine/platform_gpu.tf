@@ -13,7 +13,13 @@ data "aws_ssm_parameter" "gpu_ami" {
 }
 
 # --- NVIDIA device plugin (DaemonSet, tolerate-all so it runs on GPU nodes) ---
+#
+# Not on Auto Mode: Auto Mode bundles the NVIDIA driver + device plugin ("You do not have
+# to install or update these components"), and a second plugin on the same node would
+# fight over nvidia.com/gpu.
 resource "helm_release" "nvidia_device_plugin" {
+  count = var.enable_auto_mode ? 0 : 1
+
   name       = "nvidia-device-plugin"
   repository = "https://nvidia.github.io/k8s-device-plugin"
   chart      = "nvidia-device-plugin"
@@ -36,4 +42,9 @@ resource "helm_release" "nvidia_device_plugin" {
     null_resource.image_vendor,
     helm_release.karpenter,
   ]
+}
+
+moved {
+  from = helm_release.nvidia_device_plugin
+  to   = helm_release.nvidia_device_plugin[0]
 }

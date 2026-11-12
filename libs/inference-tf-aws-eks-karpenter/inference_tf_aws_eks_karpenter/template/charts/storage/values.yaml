@@ -5,6 +5,10 @@
 ebs:
   # -- Mark gp3 as the cluster default StorageClass.
   default: true
+  # -- EKS Auto Mode: also render ebs-gp3-auto (provisioner ebs.csi.eks.amazonaws.com,
+  #    the Auto Mode built-in EBS driver) and make IT the default StorageClass. ebs-gp3
+  #    (ebs.csi.aws.com, the add-on driver) stays for platform node-group pods.
+  autoMode: false
 
 # -- S3-mount (Mountpoint-for-S3) static PV/PVC — read-only weight store.
 s3:

@@ -26,6 +26,9 @@ resource "null_resource" "post_eks_vpc_cleanup" {
       cluster_name = local.cluster_name
       region       = var.region
       vpc_id       = module.vpc.vpc_id
+      # Auto Mode ENIs are hidden from EC2 list calls unless --include-managed-resources.
+      # Only rendered with Auto Mode, so the script (a trigger) is unchanged otherwise.
+      auto_mode = var.enable_auto_mode
     })
   }
 

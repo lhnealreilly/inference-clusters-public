@@ -250,7 +250,7 @@ def test_karpenter_drain_ordering() -> None:
     """
     content = (ENGINE / "platform_karpenter.tf").read_text()
     drain = _resource(content, "null_resource", "karpenter_drain")
-    assert "helm_release.karpenter.id" in drain, "drain must reference the controller release attribute"
+    assert "helm_release.karpenter[0].id" in drain, "drain must reference the controller release attribute"
     assert "module.eks_cluster.cluster_endpoint" in drain and "aws_eks_access_entry" in drain
     assert "when        = destroy" in drain or "when = destroy" in drain.replace("  ", " ")
     nodepools = _resource(content, "helm_release", "karpenter_nodepools")

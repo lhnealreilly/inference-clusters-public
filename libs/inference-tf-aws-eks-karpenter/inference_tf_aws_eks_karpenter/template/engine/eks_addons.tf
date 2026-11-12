@@ -59,6 +59,10 @@ resource "null_resource" "cluster_addons" {
     aws_eks_access_policy_association.admin_role,
     aws_eks_access_policy_association.admin_user,
     aws_eks_access_entry.node,
+    # Auto Mode nodes (enable_auto_mode): their EC2 access entry + AmazonEKSAutoNodePolicy
+    # stay until every chart has uninstalled, same as the node-group entry above.
+    aws_eks_access_entry.auto_node,
+    aws_eks_access_policy_association.auto_node,
   ]
 }
 
@@ -163,11 +167,13 @@ resource "aws_eks_addon" "s3_csi_driver" {
 module "cw_observability_role" {
   count = var.enable_container_insights ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-cw-observability"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  policy_arns        = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"]
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-cw-observability"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  policy_arns          = ["arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"]
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_eks_addon" "cw_observability" {

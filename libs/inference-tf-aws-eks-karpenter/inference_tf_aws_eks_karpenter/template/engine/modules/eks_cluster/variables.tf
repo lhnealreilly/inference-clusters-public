@@ -35,6 +35,11 @@ variable "public_access_cidrs" {
   EOT
 }
 
+variable "enable_auto_mode" {
+  type        = bool
+  description = "Enable EKS Auto Mode compute, block storage and load balancing (no built-in node pools)."
+}
+
 variable "combined_tags" {
   type = map(string)
 }

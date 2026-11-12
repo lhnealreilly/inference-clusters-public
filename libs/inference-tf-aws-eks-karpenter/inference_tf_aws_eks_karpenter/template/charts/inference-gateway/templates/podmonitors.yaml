@@ -1,0 +1,47 @@
+{{- /*
+PodMonitors for the gateway's routing metrics (kube-prometheus-stack selects on the
+`release` label). Prometheus Operator sets job = <namespace>/<PodMonitor name>, so with
+gatewayName=inference-gateway in the `inference` namespace the jobs are
+inference/inference-gateway-epp and inference/inference-gateway-bbr: the same `job`
+labels the HyperPod gateway produced, which catalog-demo's tier-1 metric map expects.
+Both endpoints are unauthenticated (--metrics-endpoint-auth=false).
+*/ -}}
+{{- if .Values.scrape.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.gatewayName }}-epp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- toYaml .Values.serviceMonitorLabel | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      inference/component: epp
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.scrape.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- toYaml .Values.serviceMonitorLabel | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      inference/component: bbr
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.scrape.interval }}
+{{- end }}

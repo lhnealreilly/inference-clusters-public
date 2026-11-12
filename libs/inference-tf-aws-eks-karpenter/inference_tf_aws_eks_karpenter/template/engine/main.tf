@@ -69,13 +69,21 @@ locals {
     Version  = local.template_version
   }
 
+  # jsc:cluster (opt-in): the provisioning role scopes by it. Resource-level (through
+  # combined_tags), not provider default_tags: the cluster name embeds random_id, which
+  # is unknown at the first plan, and an unknown provider default_tags value breaks
+  # tags_all planning.
   default_tags = merge(
     local.shared_tags,
     {
       DeploymentId = random_id.postfix.hex
     },
+    var.enable_jsc_cluster_tag ? { "jsc:cluster" = local.cluster_name } : {},
     var.custom_tags,
   )
+
+  # "" (jd cannot express null) -> null, so an unset boundary leaves roles unchanged.
+  permissions_boundary = var.permissions_boundary_arn == "" ? null : var.permissions_boundary_arn
   combined_tags        = local.default_tags
   cluster_name         = "${var.cluster_name_prefix}-${random_id.postfix.hex}"
   resource_name_prefix = local.cluster_name
@@ -91,7 +99,7 @@ locals {
   # matters. Content-only hash (each file's sha256, ordered by path) — deterministic
   # across environments, unlike archive_file md5 (same idiom as eks-oidc's application
   # module). fileset("**") walks recursively; sort() keeps the join order stable.
-  chart_dirs = ["karpenter", "kro", "kueue", "metrics", "storage", "inference-extension", "hyperpod-gateway"]
+  chart_dirs = ["karpenter", "kro", "kueue", "metrics", "storage", "inference-extension", "hyperpod-gateway", "inference-gateway"]
   chart_hashes = {
     for name in local.chart_dirs :
     name => sha256(join("", [
@@ -118,10 +126,11 @@ module "eks_cluster" {
   vpc_id                     = module.vpc.vpc_id
   private_subnet_ids         = module.vpc.private_subnet_ids
   public_subnet_ids          = module.vpc.public_subnet_ids
-  # Open by default — the endpoint is a knock-surface, not an auth boundary; EKS
-  # access entries (IAM) are the real gate and the data plane stays internal
-  # Not exposed as a variable for the POC.
-  public_access_cidrs = ["0.0.0.0/0"]
+  # Open by default (["0.0.0.0/0"]) — the endpoint is a knock-surface, not an auth
+  # boundary; EKS access entries (IAM) are the real gate and the data plane stays
+  # internal. The push path narrows it to the executor NAT EIP(s) + operator egress.
+  public_access_cidrs = var.public_access_cidrs
+  enable_auto_mode    = var.enable_auto_mode
   combined_tags       = local.combined_tags
 
   # Apply: VPC -> post-EKS cleanup sentinel -> EKS.
@@ -219,6 +228,42 @@ resource "aws_eks_access_entry" "node" {
   cluster_name  = module.eks_cluster.cluster_name
   principal_arn = module.node_role.role_arn
   type          = "EC2_LINUX"
+}
+
+# Auto Mode node access entry. With no built-in node pools EKS does not create one for
+# our NodeClass role ("Create node class access entry … use the EC2 access entry type").
+# One principal holds one entry, so Auto Mode nodes use their own role (iam.tf), never
+# the EC2_LINUX node role above.
+resource "aws_eks_access_entry" "auto_node" {
+  count         = var.enable_auto_mode ? 1 : 0
+  cluster_name  = module.eks_cluster.cluster_name
+  principal_arn = module.auto_node_role[0].role_arn
+  type          = "EC2"
+}
+
+resource "aws_eks_access_policy_association" "auto_node" {
+  count         = var.enable_auto_mode ? 1 : 0
+  cluster_name  = module.eks_cluster.cluster_name
+  principal_arn = module.auto_node_role[0].role_arn
+  policy_arn    = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.auto_node]
+}
+
+# Auto Mode + the HyperPod inference add-on is unsupported: AWS publishes the add-on
+# only for computeTypes ["hyperpod"], and its bundled ALB controller would fight Auto
+# Mode's load balancing. Checked at plan time even when the add-on block is not reached.
+resource "terraform_data" "auto_mode_compat" {
+  lifecycle {
+    precondition {
+      condition     = !(var.enable_auto_mode && var.enable_hyperpod_inference_gateway)
+      error_message = "enable_auto_mode with enable_hyperpod_inference_gateway is unsupported: the add-on is published for computeTypes [hyperpod]. Use enable_inference_routing + enable_inference_gateway instead."
+    }
+  }
 }
 
 # --- System managed node group ---

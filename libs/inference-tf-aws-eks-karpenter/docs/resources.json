@@ -1,0 +1,2155 @@
+{
+  "placeholders": {
+    "{cluster}": "<cluster_name_prefix>-<8 hex random_id>"
+  },
+  "plans": [
+    "auto-mode-all-optins"
+  ],
+  "resources": [
+    {
+      "address": "aws_autoscaling_group_tag.ca_enabled",
+      "type": "aws_autoscaling_group_tag",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_autoscaling_group_tag.ca_owned",
+      "type": "aws_autoscaling_group_tag",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_event_rule.karpenter",
+      "type": "aws_cloudwatch_event_rule",
+      "provider": "aws",
+      "file": "platform_karpenter.tf",
+      "gate": "for_each = var.enable_auto_mode ? {} : local.karpenter_event_rules",
+      "name_pattern": "{cluster}-karpenter-${each.key}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_cloudwatch_event_target.karpenter",
+      "type": "aws_cloudwatch_event_target",
+      "provider": "aws",
+      "file": "platform_karpenter.tf",
+      "gate": "for_each = var.enable_auto_mode ? {} : local.karpenter_event_rules",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_cloudwatch_log_group.fsx",
+      "type": "aws_cloudwatch_log_group",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "/aws/fsx/{cluster}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.eks_cluster.aws_cloudwatch_log_group.cluster",
+      "type": "aws_cloudwatch_log_group",
+      "provider": "aws",
+      "file": "main.tf -> modules/eks_cluster/main.tf",
+      "gate": "always",
+      "name_pattern": "/aws/eks/{cluster}/cluster",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_log_metric_filter.fsx_events",
+      "type": "aws_cloudwatch_log_metric_filter",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "{cluster}-fsx-events",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_metric_alarm.fsx_events",
+      "type": "aws_cloudwatch_metric_alarm",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_metric_alarm.fsx_free_capacity",
+      "type": "aws_cloudwatch_metric_alarm",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_metric_alarm.fsx_read_saturation",
+      "type": "aws_cloudwatch_metric_alarm",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_cloudwatch_metric_alarm.fsx_write_saturation",
+      "type": "aws_cloudwatch_metric_alarm",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_build.aws_codebuild_project.this",
+      "type": "aws_codebuild_project",
+      "provider": "aws",
+      "file": "platform_image_build.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.image_build_name}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_vendor.aws_codebuild_project.this",
+      "type": "aws_codebuild_project",
+      "provider": "aws",
+      "file": "images.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-image-vendor",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.onboarder.aws_codebuild_project.this",
+      "type": "aws_codebuild_project",
+      "provider": "aws",
+      "file": "onboarder.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.onboarder_name}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_ec2_tag.cluster_sg_discovery",
+      "type": "aws_ec2_tag",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "always",
+      "name_pattern": "karpenter.sh/discovery",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_ecr_repository.vendored",
+      "type": "aws_ecr_repository",
+      "provider": "aws",
+      "file": "images.tf",
+      "gate": "for_each = local.vendored_images",
+      "name_pattern": "{cluster}/${each.value.repo}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_eip.nat",
+      "type": "aws_eip",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = local.nat_count",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_access_entry.admin_role",
+      "type": "aws_eks_access_entry",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "for_each = data.aws_iam_role.admin",
+      "name_pattern": "${each.value.arn}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_entry.admin_user",
+      "type": "aws_eks_access_entry",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "for_each = data.aws_iam_user.admin",
+      "name_pattern": "${each.value.arn}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_access_entry.auto_node",
+      "type": "aws_eks_access_entry",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0",
+      "name_pattern": "${module.auto_node_role[0].role_arn}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_entry.deploy",
+      "type": "aws_eks_access_entry",
+      "provider": "aws",
+      "file": "deploy_access.tf",
+      "gate": "count = local.deploy_enabled ? 1 : 0",
+      "name_pattern": "${var.deploy_role_arn}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_entry.node",
+      "type": "aws_eks_access_entry",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "always",
+      "name_pattern": "${module.node_role.role_arn}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_policy_association.admin_role",
+      "type": "aws_eks_access_policy_association",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "for_each = data.aws_iam_role.admin",
+      "name_pattern": "arn:{partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_policy_association.admin_user",
+      "type": "aws_eks_access_policy_association",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "for_each = data.aws_iam_user.admin",
+      "name_pattern": "arn:{partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_access_policy_association.auto_node",
+      "type": "aws_eks_access_policy_association",
+      "provider": "aws",
+      "file": "main.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0",
+      "name_pattern": "arn:{partition}:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_access_policy_association.deploy_edit",
+      "type": "aws_eks_access_policy_association",
+      "provider": "aws",
+      "file": "deploy_access.tf",
+      "gate": "count = local.deploy_enabled && var.deploy_role_edit_policy ? 1 : 0",
+      "name_pattern": "arn:{partition}:eks::aws:cluster-access-policy/AmazonEKSEditPolicy",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.cert_manager",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "cert-manager",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_addon.coredns",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "coredns",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.cw_observability",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "count = var.enable_container_insights ? 1 : 0",
+      "name_pattern": "amazon-cloudwatch-observability",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.ebs_csi_driver",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "aws-ebs-csi-driver",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.hyperpod_fsx_csi_driver",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled && !var.enable_fsx ? 1 : 0",
+      "name_pattern": "aws-fsx-csi-driver",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_addon.hyperpod_inference",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "amazon-sagemaker-hyperpod-inference",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_eks_addon.kube_proxy",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "kube-proxy",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.pod_identity_agent",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "eks-pod-identity-agent",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.s3_csi_driver",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "aws-mountpoint-s3-csi-driver",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_addon.vpc_cni",
+      "type": "aws_eks_addon",
+      "provider": "aws",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "vpc-cni",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.eks_cluster.aws_eks_cluster.this",
+      "type": "aws_eks_cluster",
+      "provider": "aws",
+      "file": "main.tf -> modules/eks_cluster/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.node_group.aws_eks_node_group.this",
+      "type": "aws_eks_node_group",
+      "provider": "aws",
+      "file": "main.tf -> modules/node_group/main.tf",
+      "gate": "always",
+      "name_pattern": "platform",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_pod_identity_association.batch_inference",
+      "type": "aws_eks_pod_identity_association",
+      "provider": "aws",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "${kubernetes_service_account_v1.batch_inference.metadata[0].name}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_pod_identity_association.cluster_autoscaler",
+      "type": "aws_eks_pod_identity_association",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf",
+      "gate": "always",
+      "name_pattern": "${local.cluster_autoscaler_service_account}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_pod_identity_association.fsx_csi",
+      "type": "aws_eks_pod_identity_association",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "fsx-csi-controller-sa",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_pod_identity_association.grafana_cloudwatch",
+      "type": "aws_eks_pod_identity_association",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx && var.enable_grafana ? 1 : 0",
+      "name_pattern": "kube-prometheus-stack-grafana",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_eks_pod_identity_association.karpenter",
+      "type": "aws_eks_pod_identity_association",
+      "provider": "aws",
+      "file": "platform_karpenter.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "karpenter",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_fsx_data_repository_association.models",
+      "type": "aws_fsx_data_repository_association",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_fsx_lustre_file_system.shared",
+      "type": "aws_fsx_lustre_file_system",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_instance_profile.node",
+      "type": "aws_iam_instance_profile",
+      "provider": "aws",
+      "file": "iam.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-node",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_openid_connect_provider.eks",
+      "type": "aws_iam_openid_connect_provider",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.auto_node_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0",
+      "name_pattern": "{cluster}-auto-node",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_inference_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-batch-inference",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.cluster_autoscaler_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-cluster-autoscaler",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.cluster_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-cluster",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.cw_observability_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "eks_addons.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_container_insights ? 1 : 0",
+      "name_pattern": "{cluster}-cw-observability",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.ebs_csi_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-ebs-csi",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.fsx_csi_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_fsx.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "{cluster}-fsx-csi",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.grafana_cloudwatch_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_fsx && var.enable_grafana ? 1 : 0",
+      "name_pattern": "{cluster}-grafana-cw",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_alb_controller_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "{cluster}-hp-inference-alb",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.hyperpod_gateway_controller_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "{cluster}-hp-inference-gw",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.hyperpod_operator_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "{cluster}-hp-inference-exec",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.image_build.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_image_build.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.image_build_name}-codebuild",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_vendor.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "images.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-image-vendor-codebuild",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.karpenter_controller_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "{cluster}-karpenter",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.node_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-node",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.onboarder.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "onboarder.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.onboarder_name}-codebuild",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.s3_csi_role.aws_iam_role.this",
+      "type": "aws_iam_role",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/iam_role/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-s3-csi",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.auto_node_pullthrough",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "iam.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0",
+      "name_pattern": "{cluster}-auto-node-pullthrough",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.auto_node_s3",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "iam.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0",
+      "name_pattern": "{cluster}-auto-node-s3",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.batch_s3",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-batch-s3",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.cluster_autoscaler",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-cluster-autoscaler",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.fsx_csi",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "{cluster}-fsx-csi",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.grafana_cloudwatch",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx && var.enable_grafana ? 1 : 0",
+      "name_pattern": "{cluster}-grafana-cw",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.hyperpod_alb_controller",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "{cluster}-hp-inference-alb",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.hyperpod_operator_pass_role",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "{cluster}-hp-inference-exec-passrole",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.karpenter_controller",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "iam.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "{cluster}-karpenter-controller",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.node_pullthrough",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "images.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-node-pullthrough",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.node_s3",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-node-s3",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_iam_role_policy.s3_csi",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-s3-csi",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_build.aws_iam_role_policy.extra",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_image_build.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; count = var.attach_extra_policy ? 1 : 0",
+      "name_pattern": "${local.image_build_name}-extra",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_build.aws_iam_role_policy.this",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "platform_image_build.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.image_build_name}-permissions",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_vendor.aws_iam_role_policy.extra",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "images.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; count = var.attach_extra_policy ? 1 : 0",
+      "name_pattern": "{cluster}-image-vendor-extra",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.image_vendor.aws_iam_role_policy.this",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "images.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-image-vendor-permissions",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.onboarder.aws_iam_role_policy.extra",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "onboarder.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; count = var.attach_extra_policy ? 1 : 0",
+      "name_pattern": "${local.onboarder_name}-extra",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.onboarder.aws_iam_role_policy.this",
+      "type": "aws_iam_role_policy",
+      "provider": "aws",
+      "file": "onboarder.tf -> modules/codebuild_job/main.tf",
+      "gate": "always",
+      "name_pattern": "${local.onboarder_name}-permissions",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.auto_node_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_auto_mode ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_inference_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.cluster_autoscaler_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_cluster_autoscaler.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.cluster_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.cw_observability_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "eks_addons.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_container_insights ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.ebs_csi_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.fsx_csi_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_fsx.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.grafana_cloudwatch_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_fsx_observability.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_fsx && var.enable_grafana ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.hyperpod_alb_controller_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.hyperpod_gateway_controller_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.hyperpod_operator_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/iam_role/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.image_build.aws_iam_role_policy_attachment.managed",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_image_build.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; for_each = toset(var.managed_policy_arns)",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.image_vendor.aws_iam_role_policy_attachment.managed",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "images.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; for_each = toset(var.managed_policy_arns)",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.karpenter_controller_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.node_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "iam.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.onboarder.aws_iam_role_policy_attachment.managed",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "onboarder.tf -> modules/codebuild_job/main.tf",
+      "gate": "always; for_each = toset(var.managed_policy_arns)",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.s3_csi_role.aws_iam_role_policy_attachment.policies",
+      "type": "aws_iam_role_policy_attachment",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/iam_role/main.tf",
+      "gate": "always; for_each = {for idx, arn in var.policy_arns : tostring(idx) => arn}",
+      "name_pattern": "${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_internet_gateway.this",
+      "type": "aws_internet_gateway",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = var.enable_nat_gateway ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.node_group.aws_launch_template.this",
+      "type": "aws_launch_template",
+      "provider": "aws",
+      "file": "main.tf -> modules/node_group/main.tf",
+      "gate": "always",
+      "name_pattern": "platform-",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_nat_gateway.this",
+      "type": "aws_nat_gateway",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = local.nat_count",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_route.private_nat",
+      "type": "aws_route",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = local.nat_count",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_route_table.private",
+      "type": "aws_route_table",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = 2",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_route_table.public",
+      "type": "aws_route_table",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = var.enable_nat_gateway ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_route_table_association.private",
+      "type": "aws_route_table_association",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = 2",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_route_table_association.public",
+      "type": "aws_route_table_association",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = local.nat_count",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-batch-in",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-batch-out",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "hyperpod-tls-{postfix}-",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "{cluster}-store",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket_lifecycle_configuration.this",
+      "type": "aws_s3_bucket_lifecycle_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always; count = var.lifecycle_rule == null ? 0 : 1",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket_lifecycle_configuration.this",
+      "type": "aws_s3_bucket_lifecycle_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always; count = var.lifecycle_rule == null ? 0 : 1",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket_lifecycle_configuration.this",
+      "type": "aws_s3_bucket_lifecycle_configuration",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0; count = var.lifecycle_rule == null ? 0 : 1",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket_lifecycle_configuration.this",
+      "type": "aws_s3_bucket_lifecycle_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always; count = var.lifecycle_rule == null ? 0 : 1",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket_policy.secure_transport",
+      "type": "aws_s3_bucket_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket_policy.secure_transport",
+      "type": "aws_s3_bucket_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket_policy.secure_transport",
+      "type": "aws_s3_bucket_policy",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket_policy.secure_transport",
+      "type": "aws_s3_bucket_policy",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket_public_access_block.this",
+      "type": "aws_s3_bucket_public_access_block",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket_public_access_block.this",
+      "type": "aws_s3_bucket_public_access_block",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket_public_access_block.this",
+      "type": "aws_s3_bucket_public_access_block",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket_public_access_block.this",
+      "type": "aws_s3_bucket_public_access_block",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket_server_side_encryption_configuration.this",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket_server_side_encryption_configuration.this",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket_server_side_encryption_configuration.this",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket_server_side_encryption_configuration.this",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_intake.aws_s3_bucket_versioning.this",
+      "type": "aws_s3_bucket_versioning",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.batch_output.aws_s3_bucket_versioning.this",
+      "type": "aws_s3_bucket_versioning",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.hyperpod_tls_bucket.aws_s3_bucket_versioning.this",
+      "type": "aws_s3_bucket_versioning",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf -> modules/s3_bucket/main.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.model_store.aws_s3_bucket_versioning.this",
+      "type": "aws_s3_bucket_versioning",
+      "provider": "aws",
+      "file": "platform_storage.tf -> modules/s3_bucket/main.tf",
+      "gate": "always",
+      "name_pattern": "${aws_s3_bucket.this.id}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_security_group.fsx",
+      "type": "aws_security_group",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "{cluster}-fsx-",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_security_group.endpoints",
+      "type": "aws_security_group",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always",
+      "name_pattern": "${var.resource_name_prefix}-vpce-",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_sqs_queue.karpenter_interruption",
+      "type": "aws_sqs_queue",
+      "provider": "aws",
+      "file": "platform_karpenter.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "${local.karpenter_queue_name}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_sqs_queue_policy.karpenter_interruption",
+      "type": "aws_sqs_queue_policy",
+      "provider": "aws",
+      "file": "platform_karpenter.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_subnet.private",
+      "type": "aws_subnet",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = 2",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_subnet.public",
+      "type": "aws_subnet",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; count = local.nat_count",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "module.vpc.aws_vpc.this",
+      "type": "aws_vpc",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_endpoint.fsx",
+      "type": "aws_vpc_endpoint",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "com.amazonaws.{region}.fsx",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_endpoint.hyperpod_gateway",
+      "type": "aws_vpc_endpoint",
+      "provider": "aws",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "for_each = local.hyperpod_gateway_endpoints",
+      "name_pattern": "com.amazonaws.{region}.${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "aws_vpc_endpoint.tagging",
+      "type": "aws_vpc_endpoint",
+      "provider": "aws",
+      "file": "platform_lb_cleanup.tf",
+      "gate": "count = local.lb_capable ? 1 : 0",
+      "name_pattern": "com.amazonaws.{region}.tagging",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_vpc_endpoint.interface",
+      "type": "aws_vpc_endpoint",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always; for_each = toset(local.interface_endpoints)",
+      "name_pattern": "com.amazonaws.${data.aws_region.current.name}.${each.value}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "module.vpc.aws_vpc_endpoint.s3",
+      "type": "aws_vpc_endpoint",
+      "provider": "aws",
+      "file": "main.tf -> modules/vpc/main.tf",
+      "gate": "always",
+      "name_pattern": "com.amazonaws.${data.aws_region.current.name}.s3",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_egress_rule.cluster_to_fsx_1018_1023",
+      "type": "aws_vpc_security_group_egress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_egress_rule.cluster_to_fsx_988",
+      "type": "aws_vpc_security_group_egress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_egress_rule.fsx_all_self",
+      "type": "aws_vpc_security_group_egress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_egress_rule.fsx_all_to_cluster",
+      "type": "aws_vpc_security_group_egress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.fsx_1018_1023_from_cluster",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.fsx_1018_1023_self",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.fsx_988_from_cluster",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "aws_vpc_security_group_ingress_rule.fsx_988_self",
+      "type": "aws_vpc_security_group_ingress_rule",
+      "provider": "aws",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.ai_gateway",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_inference_gateway.tf",
+      "gate": "count = local.inference_gateway_enabled ? 1 : 0",
+      "name_pattern": "ai-gateway",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.ai_gateway_crds",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_inference_gateway.tf",
+      "gate": "count = local.inference_gateway_enabled ? 1 : 0",
+      "name_pattern": "ai-gateway-crds",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.cluster_autoscaler",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_cluster_autoscaler.tf",
+      "gate": "always",
+      "name_pattern": "cluster-autoscaler",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.dcgm_exporter",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_prometheus.tf",
+      "gate": "always",
+      "name_pattern": "dcgm-exporter",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.efa_device_plugin",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_efa.tf",
+      "gate": "count = var.enable_efa ? 1 : 0",
+      "name_pattern": "aws-efa-k8s-device-plugin",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.envoy_gateway",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_inference_gateway.tf",
+      "gate": "count = local.inference_gateway_enabled ? 1 : 0",
+      "name_pattern": "envoy-gateway",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.fsx_csi_driver",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "aws-fsx-csi-driver",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.hyperpod_gateway",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_hyperpod_gateway.tf",
+      "gate": "count = local.hyperpod_gw_enabled ? 1 : 0",
+      "name_pattern": "hyperpod-gateway",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "helm_release.inference_extension_crds",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_inference_ext.tf",
+      "gate": "count = var.enable_inference_routing ? 1 : 0",
+      "name_pattern": "inference-extension-crds",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.inference_gateway",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_inference_gateway.tf",
+      "gate": "count = local.inference_gateway_enabled ? 1 : 0",
+      "name_pattern": "inference-gateway",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.karpenter",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_karpenter.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "karpenter",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "helm_release.karpenter_nodepools",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_karpenter.tf",
+      "gate": "always",
+      "name_pattern": "karpenter-nodepools",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.keda",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_keda.tf",
+      "gate": "always",
+      "name_pattern": "keda",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.kro",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_kro.tf",
+      "gate": "always",
+      "name_pattern": "kro",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.kro_starters",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_kro.tf",
+      "gate": "always",
+      "name_pattern": "kro-starters",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.kube_prometheus_stack",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_prometheus.tf",
+      "gate": "always",
+      "name_pattern": "kube-prometheus-stack",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.kueue",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_kueue.tf",
+      "gate": "count = var.enable_kueue ? 1 : 0",
+      "name_pattern": "kueue",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.kueue_config",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_kueue.tf",
+      "gate": "count = var.enable_kueue ? 1 : 0",
+      "name_pattern": "kueue-config",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.leader_worker_set",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_lws.tf",
+      "gate": "count = var.enable_lws ? 1 : 0",
+      "name_pattern": "lws",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.metrics",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_prometheus.tf",
+      "gate": "always",
+      "name_pattern": "metrics",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.metrics_server",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_karpenter.tf",
+      "gate": "always",
+      "name_pattern": "metrics-server",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "helm_release.nvidia_device_plugin",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_gpu.tf",
+      "gate": "count = var.enable_auto_mode ? 0 : 1",
+      "name_pattern": "nvidia-device-plugin",
+      "in_plan": {
+        "auto-mode-all-optins": false
+      }
+    },
+    {
+      "address": "helm_release.storage",
+      "type": "helm_release",
+      "provider": "helm",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "storage",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_config_map_v1.batch_storage",
+      "type": "kubernetes_config_map_v1",
+      "provider": "kubernetes",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "${kubernetes_namespace_v1.workload.metadata[0].name}/${local.batch_storage_config_map_name}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_config_map_v1.fsx_platform_info",
+      "type": "kubernetes_config_map_v1",
+      "provider": "kubernetes",
+      "file": "platform_fsx.tf",
+      "gate": "count = var.enable_fsx ? 1 : 0",
+      "name_pattern": "${kubernetes_namespace_v1.workload.metadata[0].name}/fsx-platform-info",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_config_map_v1.grafana_fsx_datasource",
+      "type": "kubernetes_config_map_v1",
+      "provider": "kubernetes",
+      "file": "platform_fsx_observability.tf",
+      "gate": "count = var.enable_fsx && var.enable_grafana ? 1 : 0",
+      "name_pattern": "${local.monitoring_namespace}/grafana-fsx-datasource",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_config_map_v1.s3_mount_platform_info",
+      "type": "kubernetes_config_map_v1",
+      "provider": "kubernetes",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "${kubernetes_namespace_v1.workload.metadata[0].name}/s3-mount-platform-info",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_namespace_v1.workload",
+      "type": "kubernetes_namespace_v1",
+      "provider": "kubernetes",
+      "file": "platform_workloads.tf",
+      "gate": "always",
+      "name_pattern": "${var.workload_namespace}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_role_binding_v1.deploy",
+      "type": "kubernetes_role_binding_v1",
+      "provider": "kubernetes",
+      "file": "deploy_access.tf",
+      "gate": "for_each = local.deploy_namespaces",
+      "name_pattern": "${each.value}/${local.deploy_group}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_role_v1.deploy",
+      "type": "kubernetes_role_v1",
+      "provider": "kubernetes",
+      "file": "deploy_access.tf",
+      "gate": "for_each = local.deploy_namespaces",
+      "name_pattern": "${each.value}/${local.deploy_group}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "kubernetes_service_account_v1.batch_inference",
+      "type": "kubernetes_service_account_v1",
+      "provider": "kubernetes",
+      "file": "platform_storage.tf",
+      "gate": "always",
+      "name_pattern": "${kubernetes_namespace_v1.workload.metadata[0].name}/${local.batch_inference_service_account_name}",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.cluster_addons",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.core_node_addons",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.image_vendor",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "images.tf",
+      "gate": "for_each = local.vendored_images",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.karpenter_drain",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "platform_karpenter.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.lb_cleanup",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "platform_lb_cleanup.tf",
+      "gate": "count = local.lb_capable ? 1 : 0",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.post_eks_vpc_cleanup",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "post_eks_cleanup.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.pullthrough_infra",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "pullthrough.tf",
+      "gate": "for_each = local.trusted_upstreams",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.pullthrough_ready",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "images.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "null_resource.workload_repo_cleanup",
+      "type": "null_resource",
+      "provider": "null",
+      "file": "onboarder.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "random_id.postfix",
+      "type": "random_id",
+      "provider": "random",
+      "file": "main.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "terraform_data.auto_mode_compat",
+      "type": "terraform_data",
+      "provider": "terraform",
+      "file": "main.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "terraform_data.inference_gateway_compat",
+      "type": "terraform_data",
+      "provider": "terraform",
+      "file": "platform_inference_gateway.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    },
+    {
+      "address": "time_sleep.wait_for_nodes",
+      "type": "time_sleep",
+      "provider": "time",
+      "file": "eks_addons.tf",
+      "gate": "always",
+      "name_pattern": "",
+      "in_plan": {
+        "auto-mode-all-optins": true
+      }
+    }
+  ]
+}

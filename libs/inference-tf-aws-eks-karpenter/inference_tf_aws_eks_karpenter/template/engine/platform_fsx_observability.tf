@@ -209,10 +209,12 @@ data "aws_iam_policy_document" "grafana_cloudwatch" {
 module "grafana_cloudwatch_role" {
   count = var.enable_fsx && var.enable_grafana ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-grafana-cw"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-grafana-cw"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "grafana_cloudwatch" {

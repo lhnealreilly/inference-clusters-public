@@ -162,8 +162,8 @@ output "dcgm_exporter_ecr_repository" {
 }
 
 output "device_plugin_ecr_repository" {
-  description = "ECR repository name of the vendored NVIDIA device-plugin image."
-  value       = aws_ecr_repository.vendored["device_plugin"].name
+  description = "ECR repository name of the vendored NVIDIA device-plugin image (empty on Auto Mode, which bundles the plugin)."
+  value       = var.enable_auto_mode ? "" : aws_ecr_repository.vendored["device_plugin"].name
 }
 
 output "starter_rgd_names" {
@@ -312,4 +312,49 @@ output "hyperpod_inference_gateway_service_selector" {
     "gateway.envoyproxy.io/owning-gateway-name=${local.hyperpod_gateway_config_name}",
     "gateway.envoyproxy.io/owning-gateway-namespace=${local.hyperpod_inference_namespace}",
   ]) : ""
+}
+
+# --- EKS Auto Mode outputs ---
+
+output "auto_mode_enabled" {
+  description = "Whether inference compute runs on EKS Auto Mode instead of self-managed Karpenter (\"true\"/\"false\")."
+  # tostring(): jd's output parser rejects `type: bool` (see fsx_enabled).
+  value = tostring(var.enable_auto_mode)
+}
+
+output "auto_node_role_arn" {
+  description = "IAM role of Auto Mode nodes (NodeClass spec.role; EC2 access entry). Empty when Auto Mode is off."
+  value       = var.enable_auto_mode ? module.auto_node_role[0].role_arn : ""
+}
+
+# --- Plain inference gateway outputs (empty strings when disabled) ---
+
+output "inference_gateway_enabled" {
+  description = "Whether the plain inference gateway (Envoy Gateway + llm-d EPP + BBR, no HyperPod) is installed (\"true\"/\"false\")."
+  value       = tostring(local.inference_gateway_enabled)
+}
+
+output "inference_gateway_name" {
+  description = "Name of the plain gateway's Gateway in the workload namespace (empty when disabled)."
+  value       = local.inference_gateway_enabled ? local.inference_gateway_name : ""
+}
+
+output "inference_gateway_models" {
+  description = "Model names the plain gateway routes (OpenAI body `model` values), in scheduler order (empty when disabled)."
+  value       = local.inference_gateway_enabled ? [for s in var.hyperpod_inference_gateway_schedulers : s["model_name"]] : []
+}
+
+output "inference_gateway_service_selector" {
+  description = "Label selector of the plain gateway's Envoy Service (workload namespace; plain HTTP :80 in-cluster). Empty when disabled."
+  value = local.inference_gateway_enabled ? join(",", [
+    "gateway.envoyproxy.io/owning-gateway-name=${local.inference_gateway_name}",
+    "gateway.envoyproxy.io/owning-gateway-namespace=${var.workload_namespace}",
+  ]) : ""
+}
+
+# --- Push path ---
+
+output "deploy_kubernetes_group" {
+  description = "Kubernetes group of the deploy role's access entry (bound by the jsc-deploy Role). Empty when deploy_role_arn is unset."
+  value       = local.deploy_enabled ? local.deploy_group : ""
 }

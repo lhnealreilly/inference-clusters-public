@@ -70,6 +70,9 @@ fi
 echo "[karpenter-drain] checking for orphaned Karpenter instances via EC2 API..."
 orphans="$(aws ec2 describe-instances \
   --region "$REGION" \
+%{ if auto_mode ~}
+  --include-managed-resources \
+%{ endif ~}
   --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" \
             "Name=tag-key,Values=karpenter.sh/nodepool" \
             "Name=instance-state-name,Values=pending,running,stopping,stopped" \
@@ -105,6 +108,9 @@ echo "[karpenter-drain] waiting 15s for ENIs to release, then reaping any left i
 sleep 15
 eni_ids="$(aws ec2 describe-network-interfaces \
   --region "$REGION" \
+%{ if auto_mode ~}
+  --include-managed-resources \
+%{ endif ~}
   --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
   --query "NetworkInterfaces[].NetworkInterfaceId" \
   --output text 2>/dev/null | tr '\t' ' ')"

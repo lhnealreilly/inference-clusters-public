@@ -15,9 +15,10 @@ data "aws_iam_policy_document" "trust" {
 }
 
 resource "aws_iam_role" "this" {
-  name               = "${var.project_name}-codebuild"
-  assume_role_policy = data.aws_iam_policy_document.trust.json
-  tags               = var.combined_tags
+  name                 = "${var.project_name}-codebuild"
+  assume_role_policy   = data.aws_iam_policy_document.trust.json
+  permissions_boundary = var.permissions_boundary
+  tags                 = var.combined_tags
 }
 
 data "aws_iam_policy_document" "permissions" {

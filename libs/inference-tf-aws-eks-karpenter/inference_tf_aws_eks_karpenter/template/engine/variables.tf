@@ -745,3 +745,194 @@ variable "gpu_parallel_image_pull" {
   EOT
   type        = bool
 }
+
+variable "enable_auto_mode" {
+  description = <<-EOT
+    Run inference compute on EKS Auto Mode instead of self-managed Karpenter.
+
+    true = cluster compute/storage/ELB configs enabled, no built-in pools; our NodeClasses
+    (eks.amazonaws.com/v1) + NodePools cpu/gpu-g/gpu-p/gpu-spot with the same labels and
+    taints; no Karpenter release, no NVIDIA device plugin (Auto Mode bundles both). The
+    platform managed node group stays for control loops. Not supported together with
+    enable_hyperpod_inference_gateway (the add-on is published for computeTypes [hyperpod]).
+
+    Recommended: false
+  EOT
+  type        = bool
+}
+
+variable "public_access_cidrs" {
+  description = <<-EOT
+    CIDRs allowed to reach the public cluster API endpoint.
+
+    Private access stays on, so nodes are unaffected. Push path: our executor NAT EIP(s)
+    + the operator's egress /32. Terraform's own helm/kubernetes providers also reach the
+    cluster through this endpoint, so the deploying host's egress must be in the list.
+
+    Recommended: ["0.0.0.0/0"]
+  EOT
+  type        = list(string)
+
+  validation {
+    condition     = length(var.public_access_cidrs) >= 1 && alltrue([for c in var.public_access_cidrs : can(cidrnetmask(c))])
+    error_message = "public_access_cidrs needs at least one valid IPv4 CIDR (e.g. 203.0.113.7/32)."
+  }
+}
+
+variable "enable_inference_gateway" {
+  description = <<-EOT
+    Whether to install the plain inference gateway (no HyperPod add-on).
+
+    Envoy Gateway + Envoy AI Gateway (InferencePool backends), the GIE body-based
+    router (BBR) and one llm-d Endpoint Picker + InferencePool per entry of
+    hyperpod_inference_gateway_schedulers, with PodMonitors inference-gateway-epp and
+    inference-gateway-bbr in the workload namespace. Requires enable_inference_routing
+    (the InferencePool CRDs); mutually exclusive with enable_hyperpod_inference_gateway.
+
+    Recommended: false
+  EOT
+  type        = bool
+}
+
+variable "envoy_gateway_chart_version" {
+  description = <<-EOT
+    Envoy Gateway helm chart version (oci://docker.io/envoyproxy/gateway-helm).
+
+    The controller image is vendored from docker.io at this same tag. Must be at least the
+    egMinVersion of the pinned Envoy AI Gateway release.
+
+    Recommended: v1.9.3
+  EOT
+  type        = string
+}
+
+variable "envoy_proxy_image" {
+  description = <<-EOT
+    Envoy proxy data-plane image the pinned Envoy Gateway release defaults to.
+
+    Vendored from docker.io into ECR; keep it in sync with envoy_gateway_chart_version
+    (DefaultEnvoyProxyImage in the Envoy Gateway release).
+
+    Recommended: docker.io/envoyproxy/envoy:distroless-v1.39.5
+  EOT
+  type        = string
+}
+
+variable "envoy_ai_gateway_chart_version" {
+  description = <<-EOT
+    Envoy AI Gateway helm chart version (oci://docker.io/envoyproxy/ai-gateway-helm).
+
+    Its controller is the Envoy Gateway extension server that turns an HTTPRoute
+    InferencePool backend into an EPP-routed cluster. Images vendored at this tag.
+
+    Recommended: v1.2.1
+  EOT
+  type        = string
+}
+
+variable "llm_d_epp_version" {
+  description = <<-EOT
+    llm-d Endpoint Picker image tag (ghcr.io/llm-d/llm-d-router-endpoint-picker).
+
+    Vendored from ghcr.io. Emits both the GIE (inference_objective_*, inference_pool_*)
+    and the llm_d_epp_* metric families.
+
+    Recommended: v1.0.0
+  EOT
+  type        = string
+}
+
+variable "inference_gateway_bbr_version" {
+  description = <<-EOT
+    GIE body-based router image tag (registry.k8s.io/gateway-api-inference-extension/bbr).
+
+    Pulled through the registry-k8s pull-through cache (no vendoring).
+
+    Recommended: v1.5.0
+  EOT
+  type        = string
+}
+
+variable "deploy_role_arn" {
+  description = <<-EOT
+    IAM role ARN of the push-path deploy role (JscDeployRole); empty = no deploy access.
+
+    When set: an EKS access entry in Kubernetes group jsc-deploy (no access policy unless
+    deploy_role_edit_policy) and a namespaced Role/RoleBinding jsc-deploy in each of
+    deploy_namespaces for KRO instance kinds (every namespaced kind of
+    deploy_kro_api_groups), InferencePools, PodMonitors/ServiceMonitors and
+    ScaledObjects. Never cluster-admin; ResourceGraphDefinitions are cluster-scoped, so
+    a namespaced Role cannot grant them.
+
+    Recommended: ""
+  EOT
+  type        = string
+
+  validation {
+    condition     = var.deploy_role_arn == "" || can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$", var.deploy_role_arn))
+    error_message = "deploy_role_arn must be empty or an IAM role ARN."
+  }
+}
+
+variable "deploy_namespaces" {
+  description = <<-EOT
+    Namespaces the deploy role may write to.
+
+    Each namespace must exist (the workload namespace is created by this template).
+
+    Recommended: ["inference"]
+  EOT
+  type        = list(string)
+}
+
+variable "deploy_kro_api_groups" {
+  description = <<-EOT
+    API groups whose namespaced kinds count as KRO instance kinds for the deploy role.
+
+    Pattern-based: every RGD version adds a kind, so the Role grants the whole group
+    (resources "*") inside the allowed namespaces. kro.run is the RGD default group.
+
+    Recommended: ["kro.run"]
+  EOT
+  type        = list(string)
+}
+
+variable "deploy_role_edit_policy" {
+  description = <<-EOT
+    Whether to also associate AmazonEKSEditPolicy with the deploy role, scoped to deploy_namespaces.
+
+    Edit covers core/apps kinds (Deployments, Services, ...) but no CRDs; the jsc-deploy
+    Role covers the CRDs. Off = the deploy role can touch only the kinds in that Role.
+
+    Recommended: false
+  EOT
+  type        = bool
+}
+
+variable "permissions_boundary_arn" {
+  description = <<-EOT
+    IAM permissions boundary set on every IAM role this template creates; empty = none.
+
+    The provisioning-role path (JscProvisionRole) requires one, defined by the customer's
+    onboarding stack.
+
+    Recommended: ""
+  EOT
+  type        = string
+
+  validation {
+    condition     = var.permissions_boundary_arn == "" || can(regex("^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be empty or an IAM policy ARN."
+  }
+}
+
+variable "enable_jsc_cluster_tag" {
+  description = <<-EOT
+    Whether to tag every resource with jsc:cluster = <cluster name>.
+
+    The provisioning role scopes its permissions by this tag. Off = tags are unchanged.
+
+    Recommended: false
+  EOT
+  type        = bool
+}

@@ -31,6 +31,9 @@ fi
 list_cni_enis() {
   aws ec2 describe-network-interfaces \
     --region "$REGION" \
+%{ if auto_mode ~}
+    --include-managed-resources \
+%{ endif ~}
     --filters "Name=vpc-id,Values=$VPC_ID" "Name=description,Values=aws-K8S-*" \
     --query "NetworkInterfaces[].[NetworkInterfaceId,Status]" \
     --output text

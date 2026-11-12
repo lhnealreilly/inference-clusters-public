@@ -1,0 +1,47 @@
+{{- /*
+EKS Auto Mode NodeClasses (eks.amazonaws.com/v1), rendered instead of the EC2NodeClasses
+when autoMode.enabled. Auto Mode picks the AMI (Bottlerocket-based, NVIDIA driver +
+device plugin bundled) and generates the join config, so there is no AMI selector,
+userData or IMDS setting here (hop limit 1 cannot be changed on Auto Mode).
+  - cpu: cpu NodePool.
+  - gpu: gpu-g, gpu-p and gpu-spot NodePools (one class; the pools differ only in
+         requirements, labels and taints).
+Subnets + SG are discovered through the same karpenter.sh/discovery tag as the
+Karpenter path (private subnets; the eks-cluster-sg-* cluster SG, which the Auto Mode
+managed policy may open ingress on). No public IPs. No `tags:` — custom tags need extra
+cluster-role permissions. spec.role is the auto-node role, which has its own EC2 access
+entry (built-in pools are off, so EKS creates none).
+*/ -}}
+{{- if .Values.autoMode.enabled }}
+{{- if not .Values.autoMode.nodeRoleName }}
+{{- fail "karpenter-nodepools: autoMode.enabled needs autoMode.nodeRoleName (the Auto Mode node IAM role)" }}
+{{- end }}
+{{- if .Values.gpuP.capacityReservationId }}
+{{- fail "karpenter-nodepools: gpuP.capacityReservationId (ODCR) is not wired for Auto Mode; leave it empty with enable_auto_mode" }}
+{{- end }}
+{{- range $name, $size := dict "cpu" $.Values.autoMode.cpuEphemeralStorageSize "gpu" (printf "%dGi" (int $.Values.blockDevice.volumeSizeGi)) }}
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: {{ $name }}
+spec:
+  role: {{ $.Values.autoMode.nodeRoleName | quote }}
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ $.Values.discoveryTag | quote }}
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ $.Values.discoveryTag | quote }}
+  advancedNetworking:
+    associatePublicIPAddress: false
+  ephemeralStorage:
+    size: {{ $size }}
+    {{- if and (eq $name "gpu") $.Values.gpuParallelPull.enabled }}
+    # Extra EBS throughput/IOPS for large GPU image pulls (ranges: iops 3000-16000,
+    # throughput 125-1000 MiB/s).
+    iops: {{ $.Values.gpuParallelPull.ebsIops | int64 }}
+    throughput: {{ $.Values.gpuParallelPull.ebsThroughputMiBps | int64 }}
+    {{- end }}
+---
+{{- end }}
+{{- end }}

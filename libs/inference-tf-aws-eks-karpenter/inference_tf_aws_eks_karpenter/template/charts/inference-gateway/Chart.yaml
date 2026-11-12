@@ -1,0 +1,10 @@
+apiVersion: v2
+name: inference-gateway
+# SemVer spelling of the template version 0.1.0rc1 (Helm requires SemVer). Kept in sync
+# with the template version.
+version: 0.1.0-rc1
+description: >-
+  First-party plain inference gateway (no HyperPod add-on): Gateway on Envoy Gateway,
+  GIE body-based router, one llm-d Endpoint Picker + InferencePool per scheduler, the
+  HTTPRoute that ties them together, and PodMonitors for the EPP/BBR routing metrics.
+type: application

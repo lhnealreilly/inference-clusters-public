@@ -1,0 +1,63 @@
+{{- /*
+Gateway on Envoy Gateway. GatewayNamespace deploy mode (Envoy Gateway config) runs the
+Envoy Deployment + Service in THIS namespace; the EnvoyProxy below pins the vendored
+image, the system-node-group placement and the Service type. Envoy AI Gateway's
+extension server (installed by Terraform) translates the HTTPRoute's InferencePool
+backends into EPP-routed clusters.
+*/ -}}
+{{- include "inference-gateway.validate" . }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: {{ .Values.envoy.replicas }}
+        container:
+          image: {{ .Values.envoy.image | quote }}
+          {{- with .Values.envoy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        pod:
+          {{- include "inference-gateway.placement" . | nindent 10 }}
+      envoyService:
+        type: {{ .Values.envoy.serviceType }}
+        {{- with .Values.envoy.loadBalancerClass }}
+        loadBalancerClass: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.envoy.serviceAnnotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.gatewayClassName }}
+spec:
+  controllerName: {{ .Values.controllerName }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  gatewayClassName: {{ .Values.gatewayClassName }}
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: {{ .Values.gatewayName }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

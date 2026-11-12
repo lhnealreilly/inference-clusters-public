@@ -6,6 +6,13 @@ custom_tags         = {}
 
 # --- Control-plane endpoint: open knock-surface, IAM access entries gate ---
 cluster_log_retention_days = 90
+# Narrow to the executor NAT EIP(s) + operator egress /32 for the push path.
+public_access_cidrs = ["0.0.0.0/0"]
+
+# --- Compute: self-managed Karpenter (default) or EKS Auto Mode ---
+# true = Auto Mode NodeClasses/NodePools (same names, labels, taints), no Karpenter
+# release, no NVIDIA device plugin; the platform node group stays.
+enable_auto_mode = false
 
 # --- Egress posture: endpoints-only by default ---
 enable_nat_gateway = false
@@ -78,6 +85,28 @@ hyperpod_cluster_arn              = "" # optional: set when a HyperPod cluster i
 hyperpod_inference_gateway_schedulers = [
   { name = "default", model_name = "default", target_port = "8000" },
 ]
+
+# --- Plain inference gateway (opt-in, off by default; no HyperPod add-on) ---
+# Envoy Gateway + Envoy AI Gateway + GIE BBR + one llm-d EPP/InferencePool per entry of
+# hyperpod_inference_gateway_schedulers. Requires enable_inference_routing. docker.io and
+# ghcr.io images are vendored; BBR comes through the registry-k8s pull-through.
+# See platform_inference_gateway.tf.
+enable_inference_gateway       = false
+envoy_gateway_chart_version    = "v1.9.3"
+envoy_proxy_image              = "docker.io/envoyproxy/envoy:distroless-v1.39.5" # EG v1.9.3 DefaultEnvoyProxyImage
+envoy_ai_gateway_chart_version = "v1.2.1"
+llm_d_epp_version              = "v1.0.0"
+inference_gateway_bbr_version  = "v1.5.0"
+
+# --- Push path (opt-in): JscDeployRole access entry + namespaced RBAC (group jsc-deploy) ---
+deploy_role_arn         = ""
+deploy_namespaces       = ["inference"]
+deploy_kro_api_groups   = ["kro.run"]
+deploy_role_edit_policy = false
+
+# --- Service-provisioned clusters (JscProvisionRole): boundary + scoping tag ---
+permissions_boundary_arn = ""
+enable_jsc_cluster_tag   = false
 
 # --- Image supply: common-utility images via pull-through ---
 # Each entry MUST use a no-creds trusted upstream (public.ecr.aws/quay.io/registry.k8s.io).

@@ -16,6 +16,38 @@ resource "aws_eks_cluster" "this" {
     public_access_cidrs     = var.public_access_cidrs
   }
 
+  # EKS Auto Mode (opt-in). The three configs must be enabled together. No built-in
+  # pools: they are unbounded, unlabeled and cannot be limited; the template ships its
+  # own NodeClasses/NodePools (charts/karpenter). node_role_arn is omitted: "Create an
+  # EKS cluster with both nodePools and nodeRoleArn values empty".
+  # bootstrap_self_managed_addons stays at its default (true): the platform node group
+  # still needs vpc-cni / kube-proxy / coredns.
+  dynamic "compute_config" {
+    for_each = var.enable_auto_mode ? [1] : []
+    content {
+      enabled    = true
+      node_pools = []
+    }
+  }
+
+  dynamic "storage_config" {
+    for_each = var.enable_auto_mode ? [1] : []
+    content {
+      block_storage {
+        enabled = true
+      }
+    }
+  }
+
+  dynamic "kubernetes_network_config" {
+    for_each = var.enable_auto_mode ? [1] : []
+    content {
+      elastic_load_balancing {
+        enabled = true
+      }
+    }
+  }
+
   access_config {
     authentication_mode                         = "API_AND_CONFIG_MAP"
     bootstrap_cluster_creator_admin_permissions = false

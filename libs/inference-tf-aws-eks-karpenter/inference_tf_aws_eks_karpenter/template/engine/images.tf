@@ -169,12 +169,15 @@ locals {
   # replaces its repo). value.repo is the LOGICAL repo suffix; the actual ECR repo
   # name is prefixed with resource_name_prefix (below) so two deployments in the same
   # account+region get distinct repos and never collide on create/force_delete.
-  base_vendored_images = {
-    # nvcr.io — no no-creds mirror at all.
+  # nvcr.io — no no-creds mirror at all. Not vendored on Auto Mode (bundled plugin).
+  device_plugin_vendored_images = var.enable_auto_mode ? {} : {
     device_plugin = {
       repo   = "gpu/k8s-device-plugin"
       source = "nvcr.io/nvidia/k8s-device-plugin:${var.nvidia_device_plugin_version}"
     }
+  }
+
+  base_vendored_images = {
     # nvcr.io — DCGM is NOT on Quay/ECR-Public either (verified).
     dcgm_exporter = {
       repo   = "gpu/dcgm-exporter"
@@ -221,7 +224,40 @@ locals {
     }
   } : {}
 
-  vendored_images = merge(local.base_vendored_images, local.efa_vendored_images, local.grafana_vendored_images)
+  # Plain inference gateway (enable_inference_gateway): docker.io (Envoy Gateway, Envoy
+  # proxy, Envoy AI Gateway controller + extproc) and ghcr.io (llm-d EPP) have no
+  # no-creds pull-through, so they are vendored. BBR is on registry.k8s.io and comes
+  # through the registry-k8s pull-through instead.
+  inference_gateway_vendored_images = local.inference_gateway_enabled ? {
+    envoy_gateway = {
+      repo   = "vendored/envoy-gateway"
+      source = "docker.io/envoyproxy/gateway:${var.envoy_gateway_chart_version}"
+    }
+    envoy_proxy = {
+      repo   = "vendored/envoy-proxy"
+      source = var.envoy_proxy_image
+    }
+    ai_gateway_controller = {
+      repo   = "vendored/ai-gateway-controller"
+      source = "docker.io/envoyproxy/ai-gateway-controller:${var.envoy_ai_gateway_chart_version}"
+    }
+    ai_gateway_extproc = {
+      repo   = "vendored/ai-gateway-extproc"
+      source = "docker.io/envoyproxy/ai-gateway-extproc:${var.envoy_ai_gateway_chart_version}"
+    }
+    llm_d_epp = {
+      repo   = "vendored/llm-d-router-endpoint-picker"
+      source = "ghcr.io/llm-d/llm-d-router-endpoint-picker:${var.llm_d_epp_version}"
+    }
+  } : {}
+
+  vendored_images = merge(
+    local.device_plugin_vendored_images,
+    local.base_vendored_images,
+    local.efa_vendored_images,
+    local.grafana_vendored_images,
+    local.inference_gateway_vendored_images,
+  )
 
   vendored_tag = "vendored"
 }
@@ -267,7 +303,8 @@ data "aws_iam_policy_document" "efa_source_pull" {
 #
 # One project, driven per-image via start-build env overrides.
 module "image_vendor" {
-  source = "./modules/codebuild_job"
+  source               = "./modules/codebuild_job"
+  permissions_boundary = local.permissions_boundary
 
   project_name        = "${local.resource_name_prefix}-image-vendor"
   ecr_repository_arns = [for r in aws_ecr_repository.vendored : r.arn]

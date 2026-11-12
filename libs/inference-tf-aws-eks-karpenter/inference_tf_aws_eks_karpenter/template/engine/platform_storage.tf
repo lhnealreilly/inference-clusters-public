@@ -127,10 +127,11 @@ data "aws_iam_policy_document" "batch_s3" {
 }
 
 module "batch_inference_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-batch-inference"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-batch-inference"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "batch_s3" {
@@ -207,10 +208,11 @@ data "aws_iam_policy_document" "s3_csi" {
 }
 
 module "s3_csi_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-s3-csi"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-s3-csi"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "s3_csi" {
@@ -258,6 +260,9 @@ resource "helm_release" "storage" {
       { name = "chartContentHash", value = local.chart_hashes["storage"] },
       { name = "fsx.enabled", value = tostring(var.enable_fsx) },
     ],
+    # Auto Mode: ebs-gp3-auto (built-in EBS driver) becomes the default class. Only set
+    # when on, so a non-Auto-Mode release keeps byte-identical values (no plan diff).
+    var.enable_auto_mode ? [{ name = "ebs.autoMode", value = "true" }] : [],
     # FSx values populated only when the file system exists; otherwise fsx.enabled=false
     # short-circuits the chart's fsx-mount.yaml template.
     var.enable_fsx ? [

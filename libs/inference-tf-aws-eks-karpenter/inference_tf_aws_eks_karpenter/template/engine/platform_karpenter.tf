@@ -19,7 +19,12 @@ locals {
 # node gracefully before reclamation. No spot-interruption rule — all pools are
 # on-demand; the queue is retained for maintenance/health/rebalance events.
 
+# Auto Mode: none of the self-managed Karpenter machinery below is installed (no
+# controller, no interruption queue/rules, no Pod Identity association). Auto Mode runs
+# its own Karpenter in the control plane.
 resource "aws_sqs_queue" "karpenter_interruption" {
+  count = var.enable_auto_mode ? 0 : 1
+
   name                      = local.karpenter_queue_name
   message_retention_seconds = 300
   sqs_managed_sse_enabled   = true
@@ -27,11 +32,13 @@ resource "aws_sqs_queue" "karpenter_interruption" {
 }
 
 data "aws_iam_policy_document" "karpenter_interruption_queue" {
+  count = var.enable_auto_mode ? 0 : 1
+
   statement {
     sid       = "AllowEventBridgeToSendMessages"
     effect    = "Allow"
     actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.karpenter_interruption.arn]
+    resources = [aws_sqs_queue.karpenter_interruption[0].arn]
     principals {
       type        = "Service"
       identifiers = ["events.amazonaws.com", "sqs.amazonaws.com"]
@@ -40,8 +47,10 @@ data "aws_iam_policy_document" "karpenter_interruption_queue" {
 }
 
 resource "aws_sqs_queue_policy" "karpenter_interruption" {
-  queue_url = aws_sqs_queue.karpenter_interruption.url
-  policy    = data.aws_iam_policy_document.karpenter_interruption_queue.json
+  count = var.enable_auto_mode ? 0 : 1
+
+  queue_url = aws_sqs_queue.karpenter_interruption[0].url
+  policy    = data.aws_iam_policy_document.karpenter_interruption_queue[0].json
 }
 
 locals {
@@ -63,7 +72,7 @@ locals {
 }
 
 resource "aws_cloudwatch_event_rule" "karpenter" {
-  for_each      = local.karpenter_event_rules
+  for_each      = var.enable_auto_mode ? {} : local.karpenter_event_rules
   name          = "${local.resource_name_prefix}-karpenter-${each.key}"
   description   = each.value.description
   event_pattern = jsonencode(each.value.pattern)
@@ -71,22 +80,26 @@ resource "aws_cloudwatch_event_rule" "karpenter" {
 }
 
 resource "aws_cloudwatch_event_target" "karpenter" {
-  for_each  = local.karpenter_event_rules
+  for_each  = var.enable_auto_mode ? {} : local.karpenter_event_rules
   rule      = aws_cloudwatch_event_rule.karpenter[each.key].name
   target_id = "KarpenterInterruptionQueue"
-  arn       = aws_sqs_queue.karpenter_interruption.arn
+  arn       = aws_sqs_queue.karpenter_interruption[0].arn
 }
 
 # --- Karpenter controller (helm) + Pod Identity ---
 
 resource "aws_eks_pod_identity_association" "karpenter" {
+  count = var.enable_auto_mode ? 0 : 1
+
   cluster_name    = module.eks_cluster.cluster_name
   namespace       = local.karpenter_namespace
   service_account = "karpenter"
-  role_arn        = module.karpenter_controller_role.role_arn
+  role_arn        = module.karpenter_controller_role[0].role_arn
 }
 
 resource "helm_release" "karpenter" {
+  count = var.enable_auto_mode ? 0 : 1
+
   name       = "karpenter"
   repository = "oci://public.ecr.aws/karpenter"
   chart      = "karpenter"
@@ -130,7 +143,7 @@ resource "helm_release" "karpenter" {
     },
     {
       name  = "settings.interruptionQueue"
-      value = aws_sqs_queue.karpenter_interruption.name
+      value = aws_sqs_queue.karpenter_interruption[0].name
     },
     {
       # v1 chart: disable the validating webhook (blueprint) — avoids webhook/cert
@@ -169,6 +182,28 @@ resource "helm_release" "karpenter" {
   ]
 }
 
+# Existing (non-Auto-Mode) deployments: the counts added for enable_auto_mode move the
+# addresses only — no destroy/recreate of the controller, queue or association.
+moved {
+  from = helm_release.karpenter
+  to   = helm_release.karpenter[0]
+}
+
+moved {
+  from = aws_sqs_queue.karpenter_interruption
+  to   = aws_sqs_queue.karpenter_interruption[0]
+}
+
+moved {
+  from = aws_sqs_queue_policy.karpenter_interruption
+  to   = aws_sqs_queue_policy.karpenter_interruption[0]
+}
+
+moved {
+  from = aws_eks_pod_identity_association.karpenter
+  to   = aws_eks_pod_identity_association.karpenter[0]
+}
+
 # --- Destroy-time drain poller ---
 #
 # The orphan trap: helm uninstall of the NodePool release returns as soon as the
@@ -186,13 +221,17 @@ resource "helm_release" "karpenter" {
 #     the poller's identity still has authz for the entire drain.
 # A captured string instead of an attribute ref would silently drop the edge.
 resource "null_resource" "karpenter_drain" {
-  triggers = {
+  # merge(): the Auto Mode node access entry is a destroy edge only when it exists, so a
+  # non-Auto-Mode trigger map (and therefore the resource) is unchanged.
+  triggers = merge({
     cluster_name = module.eks_cluster.cluster_name
     region       = var.region
 
     # Attribute refs = the load-bearing destroy edges (keep these alive until the
     # poller finishes). Referenced only to force ordering; values are incidental.
-    controller_release = helm_release.karpenter.id
+    # Auto Mode has no controller release: the NodePool/NodeClaim deletes are served by
+    # Auto Mode's control-plane Karpenter, so the poller still works unchanged.
+    controller_release = try(helm_release.karpenter[0].id, "auto-mode")
     cluster_endpoint   = module.eks_cluster.cluster_endpoint
     admin_access_entry = join(",", [for e in aws_eks_access_entry.admin_role : e.id])
     node_access_entry  = aws_eks_access_entry.node.id
@@ -202,8 +241,15 @@ resource "null_resource" "karpenter_drain" {
       cluster_name = module.eks_cluster.cluster_name
       region       = var.region
       vpc_id       = module.vpc.vpc_id
+      # Auto Mode instances/ENIs are hidden from EC2 list calls unless
+      # --include-managed-resources; terminate-instances cannot remove them anyway (left
+      # to Auto Mode and to cluster deletion). Only rendered with Auto Mode.
+      auto_mode = var.enable_auto_mode
     })
-  }
+    }, var.enable_auto_mode ? {
+    # Keeps the auto-node access entry + AmazonEKSAutoNodePolicy alive until the drain is done.
+    auto_node_access_policy = aws_eks_access_policy_association.auto_node[0].id
+  } : {})
 
   provisioner "local-exec" {
     when        = destroy
@@ -238,7 +284,7 @@ resource "helm_release" "karpenter_nodepools" {
   # CRs — so wait=false is a no-op on apply and only changes the destroy path.
   wait = false
 
-  set = [
+  set = concat([
     { name = "clusterName", value = module.eks_cluster.cluster_name },
     { name = "discoveryTag", value = local.cluster_name },
     { name = "nodeInstanceProfile", value = aws_iam_instance_profile.node.name },
@@ -258,17 +304,30 @@ resource "helm_release" "karpenter_nodepools" {
     { name = "gpuG.gpuLimit", value = tostring(var.gpu_g_capacity) },
     { name = "gpuP.gpuLimit", value = tostring(var.gpu_p_capacity) },
     { name = "gpuSpot.gpuLimit", value = tostring(var.gpu_spot_capacity) },
-    # Toggles the containerd parallel-pull block in the gpu/gpu-p EC2NodeClass userData.
+    # Toggles the containerd parallel-pull block in the gpu/gpu-p EC2NodeClass userData
+    # (Karpenter) or the gpu NodeClass ephemeral-storage IOPS/throughput (Auto Mode).
     { name = "gpuParallelPull.enabled", value = tostring(var.gpu_parallel_image_pull) },
     # Chart content hash so editing a chart file triggers a re-apply (see main.tf).
     { name = "chartContentHash", value = local.chart_hashes["karpenter"] },
-  ]
+    ], var.enable_auto_mode ? [
+    # Auto Mode: render eks.amazonaws.com/v1 NodeClasses (role = the auto-node role)
+    # instead of EC2NodeClasses, with eks.amazonaws.com/* requirement keys. Only set when
+    # on, so a non-Auto-Mode release keeps byte-identical values (no plan diff).
+    { name = "autoMode.enabled", value = "true" },
+    { name = "autoMode.nodeRoleName", value = module.auto_node_role[0].role_name },
+  ] : [])
 
-  # NodePools require the Karpenter CRDs (installed by the controller release) and
-  # the drain poller so destroy deletes NodePools -> drains -> then controller.
+  # NodePools require the Karpenter CRDs (installed by the controller release, or
+  # built into Auto Mode) and the drain poller so destroy deletes NodePools -> drains ->
+  # then controller. Auto Mode: the auto-node access entry + policy must exist before a
+  # node is launched, and outlive the drain on destroy. Both lists are static refs (a
+  # count of 0 is an empty dependency), so the graph shape is the same in either mode.
   depends_on = [
     helm_release.karpenter,
     null_resource.karpenter_drain,
+    aws_eks_access_policy_association.auto_node,
+    aws_iam_role_policy.auto_node_pullthrough,
+    aws_iam_role_policy.auto_node_s3,
   ]
 }
 

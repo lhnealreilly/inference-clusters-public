@@ -118,6 +118,14 @@ This project:
 - optionally installs the **SageMaker HyperPod Inference Gateway** (`enable_hyperpod_inference_gateway`):
   the `amazon-sagemaker-hyperpod-inference` EKS add-on (operator + gateway) with a default
   `InferenceGatewayConfig` — see [SageMaker HyperPod Inference Gateway](#sagemaker-hyperpod-inference-gateway-opt-in)
+- optionally runs inference compute on **EKS Auto Mode** (`enable_auto_mode`) instead of
+  self-managed Karpenter — see [EKS Auto Mode](#eks-auto-mode-opt-in)
+- optionally installs a **plain inference gateway** without HyperPod (`enable_inference_gateway`,
+  needs `enable_inference_routing`): Envoy Gateway + Envoy AI Gateway, the GIE body-based
+  router and one llm-d Endpoint Picker + InferencePool per scheduler — see
+  [Plain inference gateway](#plain-inference-gateway-opt-in)
+- optionally grants a **push-path deploy role** (`deploy_role_arn`) namespaced RBAC — see
+  [Deploy role](#deploy-role-push-path-opt-in)
 - embeds a `random_id` postfix in resource names and tags so two deployments can coexist in
   the same account/region
 - tags all resources with `Source`, `Template`, `Version`, and `DeploymentId`
@@ -203,6 +211,72 @@ with only the gateway on. AWS nevertheless publishes the add-on for `computeType
 and documents an EKS-orchestrated HyperPod cluster as a prerequisite, so a gateway-only install
 on plain EKS is outside AWS's supported configuration (not exercised by this template).
 
+## EKS Auto Mode (opt-in)
+
+Set `enable_auto_mode = true` to run every node Karpenter would launch on
+[EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/automode.html):
+
+- The cluster gets `compute_config` (enabled, **no built-in node pools**), `storage_config`
+  (block storage) and `kubernetes_network_config.elastic_load_balancing`; the cluster role gets
+  `sts:TagSession` plus AmazonEKSComputePolicy / BlockStoragePolicyV2 / LoadBalancingPolicy /
+  NetworkingPolicy.
+- An Auto Mode node role (`auto_node_role_arn`; minimal worker + ECR pull-only + the
+  pull-through import and model-store read grants) with its own `EC2` access entry and
+  `AmazonEKSAutoNodePolicy`.
+- `charts/karpenter` renders `eks.amazonaws.com/v1` **NodeClasses** `cpu` and `gpu` instead of
+  EC2NodeClasses, and the **same NodePools** `cpu`, `gpu-g`, `gpu-p`, `gpu-spot` (names, labels,
+  taints, limits unchanged) with `eks.amazonaws.com/instance-*` requirement keys, capacity type
+  pinned on every pool, `expireAfter: 336h` (Auto Mode caps node life at 21 days),
+  `terminationGracePeriod: 1h`, `g7` dropped (not on Auto Mode's instance list), and GPU pools
+  consolidated only when empty with a `Drifted: 0` budget (the weekly AMI never rolls a
+  running GPU node).
+- **Not installed**: the Karpenter controller, its SQS interruption queue / EventBridge rules /
+  Pod Identity association, and the NVIDIA device plugin (Auto Mode bundles the driver and
+  plugin). DCGM selects NVIDIA nodes with `eks.amazonaws.com/instance-gpu-manufacturer In
+  [nvidia]` (all GPU pools). The storage chart adds `ebs-gp3-auto`
+  (`ebs.csi.eks.amazonaws.com`) as the default StorageClass.
+- The tainted `platform` managed node group stays and keeps running every control loop
+  (vpc-cni, kube-proxy, ebs-csi and pod-identity are not Auto Mode add-ons).
+- Destroy cleanup lists Auto Mode instances/ENIs with `--include-managed-resources` (hidden
+  from EC2 list calls by default); Auto Mode removes its own instances on cluster deletion.
+
+Known `jd health` false alarms on Auto Mode: `karpenter` and `nvidia-device-plugin` read as
+missing (both are built into Auto Mode). **Unsupported:** `enable_auto_mode` with
+`enable_hyperpod_inference_gateway` (the add-on is published for `computeTypes: ["hyperpod"]`;
+a plan-time precondition refuses it) and `gpu_p_capacity_reservation_id` (ODCR not wired for
+Auto Mode NodeClasses). The endpoint allowlist is `public_access_cidrs` (default
+`["0.0.0.0/0"]`; private access stays on, so nodes are unaffected).
+
+## Plain inference gateway (opt-in)
+
+Set `enable_inference_routing = true` and `enable_inference_gateway = true` for tier-1 routing
+telemetry without HyperPod: Envoy Gateway (`envoy_gateway_chart_version`, GatewayNamespace
+mode) + Envoy AI Gateway (`envoy_ai_gateway_chart_version`, the extension server that makes
+`InferencePool` an HTTPRoute backend), the GIE body-based router
+(`inference_gateway_bbr_version`, via the registry.k8s.io pull-through) as an ext_proc on the
+Gateway, and one llm-d Endpoint Picker (`llm_d_epp_version`) + `InferencePool` per entry of
+`hyperpod_inference_gateway_schedulers` (same `{name, model_name, target_port}` shape and the
+same `inference/gateway-scheduler` pod label). docker.io / ghcr.io images are vendored into
+ECR. PodMonitors `inference-gateway-epp` / `inference-gateway-bbr` in the workload namespace
+give `job = <namespace>/inference-gateway-{epp,bbr}`. The Envoy Service is ClusterIP
+(`inference_gateway_service_selector`), plain HTTP :80, no TLS. Mutually exclusive with
+`enable_hyperpod_inference_gateway`.
+
+## Deploy role (push path, opt-in)
+
+Set `deploy_role_arn` to the customer's JscDeployRole. The role gets an EKS access entry in
+Kubernetes group `jsc-deploy` and, in each of `deploy_namespaces`, a Role/RoleBinding
+`jsc-deploy` for every namespaced kind of `deploy_kro_api_groups` (KRO instances; RGDs are
+cluster-scoped and so never grantable), InferencePools, PodMonitors/ServiceMonitors and
+ScaledObjects, plus read on pods/logs/events/services. `deploy_role_edit_policy = true` also
+associates AmazonEKSEditPolicy scoped to those namespaces. Never cluster-admin.
+
+For service-provisioned clusters, `permissions_boundary_arn` sets a permissions boundary on
+every IAM role the template creates and `enable_jsc_cluster_tag` tags every resource
+`jsc:cluster = <cluster name>`. `engine/backend-s3.tf.example` documents switching state to a
+customer S3 bucket (partial `backend "s3" {}` + `-backend-config`). `docs/RESOURCES.md` /
+`docs/resources.json` list every resource type and name pattern the template creates.
+
 ## Requirements
 
 | Name | Version |
@@ -219,7 +293,8 @@ project for descriptions and recommended values. Grouped by concern:
 | Group | Variables |
 |---|---|
 | Cluster | `region`, `cluster_name_prefix`, `kubernetes_version`, `custom_tags`, `cluster_log_retention_days` |
-| Networking | `enable_nat_gateway` |
+| Networking | `enable_nat_gateway`, `public_access_cidrs` |
+| Compute mode | `enable_auto_mode` |
 | Bootstrap node group | `bootstrap_instance_types`, `bootstrap_desired_size`, `bootstrap_min_size`, `bootstrap_max_size` |
 | Access | `admin_role_names`, `admin_user_names` |
 | Autoscaling / Karpenter | `karpenter_version`, `cluster_autoscaler_chart_version`, `enable_gpu_p_nodepool`, `gpu_p_capacity_reservation_id`, `enable_gpu_spot_nodepool`, `gpu_spot_capacity`, `gpu_parallel_image_pull`, `cpu_capacity`, `memory_capacity` |
@@ -230,6 +305,8 @@ project for descriptions and recommended values. Grouped by concern:
 | FSx for Lustre (opt-in) | `enable_fsx`, `fsx_storage_capacity_gib`, `fsx_per_unit_storage_throughput`, `fsx_imported_file_chunk_size_mib`, `fsx_kms_key_arn`, `fsx_csi_driver_chart_version` |
 | Inference routing | `enable_inference_routing` |
 | HyperPod Inference Gateway (opt-in) | `enable_hyperpod_inference_gateway`, `hyperpod_inference_addon_version`, `hyperpod_cluster_arn`, `hyperpod_inference_gateway_schedulers` |
+| Plain inference gateway (opt-in) | `enable_inference_gateway`, `envoy_gateway_chart_version`, `envoy_proxy_image`, `envoy_ai_gateway_chart_version`, `llm_d_epp_version`, `inference_gateway_bbr_version` |
+| Deploy role / provisioning (opt-in) | `deploy_role_arn`, `deploy_namespaces`, `deploy_kro_api_groups`, `deploy_role_edit_policy`, `permissions_boundary_arn`, `enable_jsc_cluster_tag` |
 
 ## Outputs
 
@@ -269,6 +346,11 @@ project for descriptions and recommended values. Grouped by concern:
 | `hyperpod_inference_gateway_models` | Model names (the OpenAI request model field) the default gateway routes (empty when disabled) |
 | `hyperpod_inference_gateway_service_selector` | Label selector of the gateway's Envoy Service in the add-on namespace — the in-VPC endpoint (http://SERVICE.NAMESPACE.svc:80) |
 | `hyperpod_inference_tls_bucket` / `hyperpod_inference_execution_role_arn` | The add-on's TLS-certificate bucket + IRSA execution role (empty when disabled) |
+| `auto_mode_enabled` / `auto_node_role_arn` | Whether compute runs on EKS Auto Mode, and the Auto Mode node role (empty when off) |
+| `inference_gateway_enabled` / `inference_gateway_name` | Whether the plain inference gateway is installed, and its Gateway name (workload namespace) |
+| `inference_gateway_models` | Model names the plain gateway routes (empty when disabled) |
+| `inference_gateway_service_selector` | Label selector of the plain gateway's Envoy Service (workload namespace, http :80) |
+| `deploy_kubernetes_group` | Kubernetes group of the deploy role's access entry (empty when no deploy role is set) |
 
 Run `jd show --outputs --list` for the complete list.
 
@@ -303,6 +385,11 @@ AND DISCLAIMERS APPLY EXCEPT TO THE EXTENT PROHIBITED BY APPLICABLE LAW.
 
 - Grafana (AGPL-3.0) — https://github.com/grafana/grafana — only deployed when
   `enable_grafana = true` (off by default).
+- Envoy Gateway (Apache-2.0) — https://github.com/envoyproxy/gateway — and Envoy AI Gateway
+  (Apache-2.0) — https://github.com/envoyproxy/ai-gateway — only deployed when
+  `enable_inference_gateway = true` (off by default).
+- llm-d inference scheduler / router (Apache-2.0) — https://github.com/llm-d/llm-d-inference-scheduler
+  — only deployed when `enable_inference_gateway = true`.
 
 ## License
 

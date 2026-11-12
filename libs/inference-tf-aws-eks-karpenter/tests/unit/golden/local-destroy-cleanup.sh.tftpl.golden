@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Destroy-time drain. Sandwiched between the NodePool release (deleted first,
+# via depends_on) and the Karpenter controller + cluster (torn down after, via the
+# attribute-referenced triggers). Guarantees Karpenter-provisioned nodes — which
+# are NOT in Terraform state — are reclaimed before the controller/cluster/VPC go,
+# so no orphaned EC2/EBS/ENIs block VPC deletion.
+#
+# Load-bearing: because the triggers reference the controller + cluster as real
+# attributes, both stay alive for this whole poll. The EC2-API force path keys off
+# tags (not the cluster API) precisely because reaching the timeout means something
+# is wrong and the cluster API is the plausibly-broken thing.
+
+CLUSTER_NAME="${cluster_name}"
+REGION="${region}"
+VPC_ID="${vpc_id}"
+MAX_WAIT_SECONDS=600
+SLEEP_INTERVAL=15
+
+echo "[karpenter-drain] bootstrapping kubeconfig for $CLUSTER_NAME ($REGION)..."
+# Self-bootstrap — never assume a prior 'jd cluster login'. Isolated kubeconfig.
+export KUBECONFIG
+KUBECONFIG="$(mktemp)"
+aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$REGION" --kubeconfig "$KUBECONFIG" >/dev/null 2>&1 || {
+  echo "[karpenter-drain] WARNING: could not bootstrap kubeconfig; skipping API drain, going straight to EC2 force path."
+}
+
+# --- Phase 1: delete NodePools + NodeClaims via the cluster API (best effort) ---
+if kubectl get nodepools >/dev/null 2>&1; then
+  echo "[karpenter-drain] deleting all NodePools and NodeClaims..."
+  kubectl delete nodepool --all --ignore-not-found --timeout=60s 2>&1 || true
+  kubectl delete nodeclaim --all --ignore-not-found --timeout=60s 2>&1 || true
+fi
+
+# If the NodeClaim CRD isn't installed, Karpenter's NodePool chart never applied,
+# so there is nothing to drain — skip straight past the poll. (Without this guard,
+# `kubectl get nodeclaims` errors on the missing CRD and the count reads as a
+# non-numeric value that never equals 0, burning the full timeout.)
+if ! kubectl get crd nodeclaims.karpenter.sh >/dev/null 2>&1; then
+  echo "[karpenter-drain] NodeClaim CRD absent — no Karpenter nodes to drain, skipping poll."
+else
+  # --- Phase 2: block until zero NodeClaims (generous timeout for GPU drains) ---
+  waited=0
+  while true; do
+    # Count NodeClaims robustly. On a transient API error, grep yields empty →
+    # treat as 0 only after the CRD check above confirmed Karpenter was installed.
+    remaining="$(kubectl get nodeclaims --no-headers 2>/dev/null | grep -c . || true)"
+    [ -z "$remaining" ] && remaining=0
+
+    if [ "$remaining" = "0" ]; then
+      echo "[karpenter-drain] all NodeClaims drained cleanly."
+      break
+    fi
+
+    if [ "$waited" -ge "$MAX_WAIT_SECONDS" ]; then
+      echo "[karpenter-drain] TIMEOUT after $${MAX_WAIT_SECONDS}s with $remaining NodeClaim(s) — switching to EC2 force path."
+      break
+    fi
+
+    echo "[karpenter-drain]   $remaining NodeClaim(s) remaining... ($${waited}s / $${MAX_WAIT_SECONDS}s)"
+    sleep "$SLEEP_INTERVAL"
+    waited=$((waited + SLEEP_INTERVAL))
+  done
+fi
+
+# --- Phase 3: EC2-API force path (authoritative — keys off tags, not the API) ---
+# Only reached on timeout. Terminate any instance still tagged for this cluster's
+# Karpenter nodepools, so a wedged drain can never hang jd down forever.
+echo "[karpenter-drain] checking for orphaned Karpenter instances via EC2 API..."
+orphans="$(aws ec2 describe-instances \
+  --region "$REGION" \
+  --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" \
+            "Name=tag-key,Values=karpenter.sh/nodepool" \
+            "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text 2>/dev/null || true)"
+
+if [ -n "$orphans" ]; then
+  echo "[karpenter-drain] force-terminating orphaned instances: $orphans"
+  # Best-effort finalizer removal so the API objects don't wedge if the cluster is
+  # still reachable; then terminate the instances authoritatively.
+  for nc in $(kubectl get nodeclaims -o name 2>/dev/null || true); do
+    kubectl patch "$nc" --type=merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+  done
+  # shellcheck disable=SC2086
+  aws ec2 terminate-instances --region "$REGION" --instance-ids $orphans 2>&1 || true
+  echo "[karpenter-drain] waiting for terminated instances before reaping their ENIs..."
+  # shellcheck disable=SC2086
+  aws ec2 wait instance-terminated --region "$REGION" --instance-ids $orphans 2>&1 || true
+else
+  echo "[karpenter-drain] no orphaned Karpenter instances found."
+fi
+
+# --- Phase 4: reap leftover VPC CNI ENIs (unblocks subnet deletion) ---
+# The VPC CNI attaches secondary ENIs to nodes for pod IPs. These are created
+# out-of-band, so they are NOT in Terraform state. After a node terminates its
+# secondary ENIs release ASYNCHRONOUSLY and can linger in "available" state — and the
+# subnet destroy that follows then fails with DependencyViolation. Delete any available
+# ENI still in this VPC so `aws_subnet.private` can be destroyed. Scoped by vpc-id +
+# status=available (matches the eks-oidc template's proven filter); runs unconditionally
+# so a re-run after a previously-incomplete destroy also clears orphans. No-op on a
+# clean drain. NB: a bare `sleep` also lets any Phase-2 API-drained node's ENIs settle.
+echo "[karpenter-drain] waiting 15s for ENIs to release, then reaping any left in $VPC_ID..."
+sleep 15
+eni_ids="$(aws ec2 describe-network-interfaces \
+  --region "$REGION" \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
+  --query "NetworkInterfaces[].NetworkInterfaceId" \
+  --output text 2>/dev/null | tr '\t' ' ')"
+if [ -n "$eni_ids" ]; then
+  for eni in $eni_ids; do
+    echo "[karpenter-drain]   deleting orphaned ENI $eni"
+    aws ec2 delete-network-interface --region "$REGION" --network-interface-id "$eni" 2>&1 || true
+  done
+  echo "[karpenter-drain] ENI cleanup complete."
+else
+  echo "[karpenter-drain] no orphaned ENIs found."
+fi
+
+rm -f "$KUBECONFIG" 2>/dev/null || true
+echo "[karpenter-drain] done."

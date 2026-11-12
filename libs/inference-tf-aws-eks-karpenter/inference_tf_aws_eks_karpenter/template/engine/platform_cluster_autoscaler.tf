@@ -90,10 +90,11 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 # The tag-scoped write statement needs a condition, so attach the policy document
 # directly via aws_iam_role_policy (same pattern as the Karpenter controller role).
 module "cluster_autoscaler_role" {
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-cluster-autoscaler"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  source               = "./modules/iam_role"
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-cluster-autoscaler"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "cluster_autoscaler" {

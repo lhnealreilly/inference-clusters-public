@@ -322,4 +322,47 @@ The gateway has no request authentication by default (`spec.auth.jwt` on the
 `InferenceGatewayConfig` enables it); access is bounded by the VPC. Do not edit the
 generated InferencePool / HTTPRoute / EPP objects: the gateway controller owns them.
 
+## EKS Auto Mode (opt-in)
+
+Enabled by `enable_auto_mode: true` (off by default). Inference nodes (pools `cpu`, `gpu-g`,
+`gpu-p`, `gpu-spot`: same names, labels and taints) are Auto Mode managed instances on the
+`eks.amazonaws.com/v1` NodeClasses `cpu` / `gpu`; the `platform` node group still runs the
+control loops. There is no Karpenter controller and no NVIDIA device plugin DaemonSet (both
+are built into Auto Mode), so:
+- `jd health` shows `karpenter` and `nvidia-device-plugin` as missing: an expected false
+  alarm on Auto Mode clusters;
+- `jd pool` works (Auto Mode NodePools are `karpenter.sh/v1`);
+- node requirement/affinity keys are `eks.amazonaws.com/instance-*`, not
+  `karpenter.k8s.aws/instance-*` (Spot GPU-memory affinity must use
+  `eks.amazonaws.com/instance-gpu-memory`);
+- Auto Mode instances/ENIs are hidden from `aws ec2 describe-*` unless
+  `--include-managed-resources`; filter by tag `eks:eks-cluster-name`;
+- GPU pools never roll a running node for AMI drift (`Drifted: 0`), but new nodes get the
+  newest weekly AMI: record `node.status.nodeInfo` + driver per run, and pair runs only on
+  identical platforms.
+Not supported with `enable_hyperpod_inference_gateway` (the add-on is HyperPod-only; use the
+plain gateway below) or with `gpu_p_capacity_reservation_id`.
+
+## Plain inference gateway (opt-in)
+
+Enabled by `enable_inference_routing: true` + `enable_inference_gateway: true` (no HyperPod).
+Envoy Gateway + Envoy AI Gateway, BBR and one llm-d EPP + InferencePool per entry of
+`hyperpod_inference_gateway_schedulers`; the Gateway `inference-gateway`, its Envoy Service
+(ClusterIP, http :80, selector `inference_gateway_service_selector`), the EPPs, BBR and the
+PodMonitors `inference-gateway-epp` / `inference-gateway-bbr` all live in the workload
+namespace. A model joins exactly as with the HyperPod gateway: label its pods
+`inference/gateway-scheduler: <scheduler name>` and serve under `model_name`.
+
+Checks: `kubectl get gateway,httproute,inferencepool -n <workload namespace>` (Gateway
+`Programmed`, pool `Accepted`); Prometheus jobs `<workload namespace>/inference-gateway-epp`
+and `-bbr` up.
+
+## Deploy role (push path, opt-in)
+
+`deploy_role_arn` gives that IAM role an access entry in Kubernetes group `jsc-deploy` and a
+Role/RoleBinding `jsc-deploy` in each of `deploy_namespaces`: KRO instance kinds (every
+namespaced kind of `deploy_kro_api_groups`), InferencePools, PodMonitors/ServiceMonitors,
+ScaledObjects, and read on pods/logs/events/services. Never cluster-admin; it cannot create
+ResourceGraphDefinitions. `public_access_cidrs` is the API endpoint allowlist.
+
 {{ generated-by-footer }}

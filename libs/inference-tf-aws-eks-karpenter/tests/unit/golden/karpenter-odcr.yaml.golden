@@ -1,0 +1,293 @@
+---
+# Source: karpenter-nodepools/templates/ec2nodeclass.yaml
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: cpu
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  # instanceProfile (pre-created in Terraform), NOT role: on the endpoints-only VPC
+  # Karpenter can't reach IAM to manage a profile itself. See iam.tf.
+  instanceProfile: "p"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 200Gi
+        volumeType: gp3
+        encrypted: true
+  # IMDSv2 with hop limit 2: a CONTAINERIZED process (pod) is one network hop
+  # beyond the host, so with the Karpenter default hop limit of 1 a pod cannot reach
+  # IMDS → node-role credentials are invisible to pods (S3-direct/SDK "Unable to
+  # locate credentials"). The bootstrap MNG launch template sets 2 for the same
+  # reason; Karpenter does NOT inherit that.
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 2
+  tags:
+    karpenter.sh/discovery: "t"
+
+---
+# Source: karpenter-nodepools/templates/ec2nodeclass.yaml
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: gpu-p
+spec:
+  # Same EKS-optimized AL2023 NVIDIA AMI + device plugin as the g pool (p4d/p5/p5en
+  # are all x86_64 NVIDIA — verified live), so no separate bootstrap machinery.
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - id: "a"
+  instanceProfile: "p"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 200Gi
+        volumeType: gp3
+        encrypted: true
+        throughput: 600
+        iops: 3000
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 2
+  # ODCR seam: pin the P pool to a Capacity Reservation. Karpenter launches
+  # into the reservation instead of plain on-demand — the way orgs secure scarce P
+  # capacity. Empty = plain on-demand.
+  capacityReservationSelectorTerms:
+    - id: "cr-1"
+
+  userData: |
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      featureGates:
+        FastImagePull: true
+  tags:
+    karpenter.sh/discovery: "t"
+
+---
+# Source: karpenter-nodepools/templates/ec2nodeclass.yaml
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: gpu
+spec:
+  # GPU AMI selected by explicit ID (resolved from the EKS-optimized NVIDIA SSM
+  # parameter in Terraform), NOT an alias. amiFamily is required when using a
+  # non-alias selector term so Karpenter knows how to bootstrap.
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - id: "a"
+  # instanceProfile (pre-created in Terraform), NOT role: on the endpoints-only VPC
+  # Karpenter can't reach IAM to manage a profile itself. See iam.tf.
+  instanceProfile: "p"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "t"
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 200Gi
+        volumeType: gp3
+        encrypted: true
+        throughput: 600
+        iops: 3000
+  # IMDSv2 with hop limit 2: a CONTAINERIZED process (pod) is one network hop
+  # beyond the host, so with the Karpenter default hop limit of 1 a pod cannot reach
+  # IMDS → node-role credentials are invisible to pods (S3-direct/SDK "Unable to
+  # locate credentials"). The bootstrap MNG launch template sets 2 for the same
+  # reason; Karpenter does NOT inherit that.
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 2
+
+  userData: |
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      featureGates:
+        FastImagePull: true
+  tags:
+    karpenter.sh/discovery: "t"
+
+---
+# Source: karpenter-nodepools/templates/nodepools.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: cpu
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: cpu
+      expireAfter: 720h
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["c","m","r"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["5"]
+  # Authoritative capacity cap for the CPU pool. This is the single source of
+  # truth for CPU/memory capacity — Kueue's ClusterQueue nominalQuota is derived
+  # from the SAME Terraform values (platform_kueue.tf), so Kueue never admits more
+  # than Karpenter will provision, and the two cannot drift.
+  limits:
+    cpu: 768
+    memory: 4Ti
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+
+---
+# Source: karpenter-nodepools/templates/nodepools.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-g
+spec:
+  template:
+    metadata:
+      labels:
+        inference/accelerator: nvidia-g
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: gpu
+      expireAfter: 720h
+      taints:
+        - key: nvidia.com/gpu
+          value: "present"
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["g5","g6","g6e","g7","g7e"]
+  # Authoritative GPU cap for the g-tier pool. Kueue's gpu-g flavor nominalQuota
+  # (nvidia.com/gpu AND vpc.amazonaws.com/efa) is derived from this SAME value.
+  limits:
+    nvidia.com/gpu: 16
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+
+---
+# Source: karpenter-nodepools/templates/nodepools.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-p
+spec:
+  template:
+    metadata:
+      labels:
+        inference/accelerator: nvidia-p
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: gpu-p
+      expireAfter: 720h
+      taints:
+        # Shared GPU taint (keeps non-GPU pods off) + a DISTINCT high-tier taint so a
+        # pod reaches P only by tolerating BOTH — an under-specified GPU pod is repelled
+        # here and falls to gpu-g, so the expensive node is never grabbed/provisioned
+        # by accident. The taint key MUST differ from the label key
+        # (inference/accelerator): a key that is both a label and a taint breaks
+        # Karpenter's scheduling simulation ("label does not have known values",
+        # so the tier taint is inference/gpu-tier=high, not the label.
+        - key: nvidia.com/gpu
+          value: "present"
+          effect: NoSchedule
+        - key: inference/gpu-tier
+          value: "high"
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["p4d","p5","p5en"]
+  # Authoritative GPU cap for the high-tier P pool. Kueue's gpu-multinode flavor
+  # nominalQuota is derived from this SAME value.
+  limits:
+    nvidia.com/gpu: 64
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+
+---
+# Source: karpenter-nodepools/templates/nodepools.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-spot
+spec:
+  template:
+    metadata:
+      labels:
+        inference/capacity: spot
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: gpu
+      expireAfter: 720h
+      taints:
+        # Shared GPU taint + a DISTINCT capacity taint: a pod reaches Spot only by
+        # tolerating BOTH (and selecting karpenter.sh/capacity-type=spot). The label
+        # inference/capacity=spot lets tools see Spot nodes without the Karpenter label.
+        - key: nvidia.com/gpu
+          value: "present"
+          effect: NoSchedule
+        - key: inference/capacity
+          value: "spot"
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["g5","g6","g6e","g7","g7e","p4d","p5","p5en"]
+  # A small cap: the pool is for short tests (template var gpu_spot_capacity).
+  limits:
+    nvidia.com/gpu: 4
+  disruption:
+    # Only empty nodes are consolidated: a running test is never moved to save money
+    # (it is interrupted by AWS at most); an empty Spot node goes away after consolidateAfter.
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 1m

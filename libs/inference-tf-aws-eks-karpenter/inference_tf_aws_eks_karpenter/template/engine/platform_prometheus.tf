@@ -160,25 +160,36 @@ resource "helm_release" "dcgm_exporter" {
   version    = var.dcgm_exporter_chart_version
   namespace  = local.monitoring_namespace
 
-  set = [
+  set = concat([
     {
       name  = "image.repository"
       value = aws_ecr_repository.vendored["dcgm_exporter"].repository_url
     },
     { name = "image.tag", value = local.vendored_tag },
+    ], var.enable_auto_mode ? [
+    # Auto Mode: every NVIDIA node of every GPU pool (gpu-g, gpu-p, gpu-spot) through the
+    # Auto Mode instance label, instead of gpu-g's inference/accelerator=nvidia-g label
+    # (which misses gpu-p and gpu-spot nodes). The affinity keeps DCGM off CPU nodes, so
+    # it may tolerate every taint (nvidia.com/gpu, inference/gpu-tier, inference/capacity).
+    { name = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key", value = "eks.amazonaws.com/instance-gpu-manufacturer" },
+    { name = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator", value = "In" },
+    { name = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]", value = "nvidia" },
+    { name = "tolerations[0].operator", value = "Exists" },
+    ] : [
     # Run ONLY on GPU nodes (the gpu-g NodePool labels them inference/accelerator).
     { name = "nodeSelector.inference/accelerator", value = "nvidia-g" },
     # Tolerate the GPU pool taint so it CAN land there.
     { name = "tolerations[0].key", value = "nvidia.com/gpu" },
     { name = "tolerations[0].operator", value = "Exists" },
     { name = "tolerations[0].effect", value = "NoSchedule" },
+    ], [
     # Emit a ServiceMonitor so Prometheus scrapes GPU metrics. It MUST carry the
     # release label the stack's Prometheus selects on (serviceMonitorSelector =
     # release: kube-prometheus-stack), or Prometheus ignores it and no GPU metrics
     # flow (verified live — DCGM target absent until this label was added).
     { name = "serviceMonitor.enabled", value = "true" },
     { name = "serviceMonitor.additionalLabels.release", value = "kube-prometheus-stack" },
-  ]
+  ])
 
   depends_on = [
     helm_release.kube_prometheus_stack,

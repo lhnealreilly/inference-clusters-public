@@ -335,10 +335,12 @@ data "aws_iam_policy_document" "fsx_csi" {
 module "fsx_csi_role" {
   count = var.enable_fsx ? 1 : 0
 
-  source             = "./modules/iam_role"
-  role_name          = "${local.resource_name_prefix}-fsx-csi"
-  assume_role_policy = data.aws_iam_policy_document.pod_identity_trust.json
-  combined_tags      = local.combined_tags
+  source = "./modules/iam_role"
+
+  permissions_boundary = local.permissions_boundary
+  role_name            = "${local.resource_name_prefix}-fsx-csi"
+  assume_role_policy   = data.aws_iam_policy_document.pod_identity_trust.json
+  combined_tags        = local.combined_tags
 }
 
 resource "aws_iam_role_policy" "fsx_csi" {

@@ -14,3 +14,9 @@ variable "policy_arns" {
 variable "combined_tags" {
   type = map(string)
 }
+
+variable "permissions_boundary" {
+  type        = string
+  default     = null
+  description = "IAM permissions boundary ARN set on the role (null = none)."
+}

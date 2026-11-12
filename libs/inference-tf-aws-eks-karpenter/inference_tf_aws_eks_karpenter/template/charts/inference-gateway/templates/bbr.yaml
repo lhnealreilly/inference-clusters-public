@@ -1,0 +1,125 @@
+{{- /*
+GIE body-based router (image from registry.k8s.io through the registry-k8s pull-through).
+Attached to the Gateway as an Envoy Gateway ext_proc (EnvoyExtensionPolicy) with the
+request body Buffered, so BBR runs in non-streaming mode (no --streaming). Plaintext gRPC
+(--secure-serving=false; Service appProtocol h2c). Modeled on the GIE v1.5.0
+body-based-routing chart.
+*/ -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+---
+# base-model-to-header reads LoRA-adapter -> base-model mappings from ConfigMaps.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.gatewayName }}-bbr
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.gatewayName }}-bbr
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.bbr.replicas }}
+  selector:
+    matchLabels:
+      inference/component: bbr
+  template:
+    metadata:
+      labels:
+        inference/component: bbr
+    spec:
+      serviceAccountName: {{ .Values.gatewayName }}-bbr
+      {{- include "inference-gateway.placement" . | nindent 6 }}
+      containers:
+        - name: bbr
+          image: {{ .Values.bbr.image | quote }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --grpc-port
+            - {{ .Values.bbr.port | quote }}
+            - --grpc-health-port
+            - {{ .Values.bbr.healthCheckPort | quote }}
+            - --metrics-port
+            - {{ .Values.bbr.metricsPort | quote }}
+            - --secure-serving=false
+            - --metrics-endpoint-auth=false
+            - --tracing=false
+            - --plugin
+            - {{ printf "body-field-to-header:model-extractor:%s" (dict "fieldName" "model" "headerName" .Values.bbr.modelHeader | toJson) | quote }}
+            - --plugin
+            - "base-model-to-header:base-model-mapper"
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.bbr.port }}
+            - name: grpc-health
+              containerPort: {{ .Values.bbr.healthCheckPort }}
+            - name: metrics
+              containerPort: {{ .Values.bbr.metricsPort }}
+          {{- with .Values.podDefaults.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    inference/component: bbr
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: {{ .Values.bbr.port }}
+      targetPort: {{ .Values.bbr.port }}
+      appProtocol: kubernetes.io/h2c
+  type: ClusterIP
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: {{ .Values.gatewayName }}-bbr
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayName }}
+  extProc:
+    - backendRefs:
+        - name: {{ .Values.gatewayName }}-bbr
+          port: {{ .Values.bbr.port }}
+      messageTimeout: {{ .Values.bbr.messageTimeout }}
+      failOpen: false
+      processingMode:
+        request:
+          body: Buffered

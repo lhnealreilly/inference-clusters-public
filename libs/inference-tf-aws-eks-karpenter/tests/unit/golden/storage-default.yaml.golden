@@ -1,0 +1,56 @@
+---
+# Source: storage/templates/ebs-storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"
+
+---
+# Source: storage/templates/s3-mount.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: model-store
+spec:
+  capacity:
+    # Ignored by Mountpoint (S3 has no fixed capacity) but required by the PV schema.
+    storage: 1200Gi
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - read-only
+    - prefix models/
+  csi:
+    driver: s3.csi.aws.com
+    # volumeHandle MUST be unique across the cluster; it is NOT the bucket name.
+    volumeHandle: model-store-
+    volumeAttributes:
+      bucketName: ""
+      region: ""
+
+---
+# Source: storage/templates/s3-mount.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-store
+  namespace: default
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1200Gi
+  volumeName: model-store

@@ -1,0 +1,45 @@
+{{- /*
+Routing: BBR (EnvoyExtensionPolicy ext_proc on the Gateway) copies the OpenAI body
+`model` into bbr.modelHeader and clears the route cache; the route is then re-matched on
+that header to the scheduler's InferencePool. The last rule (no header match) sends to
+the FIRST scheduler: it is the route every request matches before BBR runs (Envoy
+Gateway enables the ext_proc filter per route), and the fallback for an unknown model.
+*/ -}}
+{{- $first := index .Values.schedulers 0 }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.gatewayName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gatewayName }}
+  rules:
+    {{- range .Values.schedulers }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - type: Exact
+              name: {{ $.Values.bbr.modelHeader }}
+              value: {{ .modelName | quote }}
+      backendRefs:
+        - group: inference.networking.k8s.io
+          kind: InferencePool
+          name: {{ .name }}
+      timeouts:
+        request: {{ $.Values.requestTimeout }}
+    {{- end }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: inference.networking.k8s.io
+          kind: InferencePool
+          name: {{ $first.name }}
+      timeouts:
+        request: {{ .Values.requestTimeout }}

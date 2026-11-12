@@ -44,3 +44,9 @@ variable "managed_policy_arns" {
   description = "AWS-managed policy ARNs to attach to the job role — e.g. AmazonS3ReadOnlyAccess so the onboarder can read any weight-source bucket. Empty = none."
   default     = []
 }
+
+variable "permissions_boundary" {
+  type        = string
+  default     = null
+  description = "IAM permissions boundary ARN set on the role (null = none)."
+}

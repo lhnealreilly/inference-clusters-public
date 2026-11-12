@@ -10,7 +10,27 @@ NodePools (karpenter.sh/v1). On-demand, except the gated gpu-spot test pool.
   - gpu-spot: short tests on Spot, gated. Every g + p family on the gpu NodeClass,
            capacity-type spot only; taint + label inference/capacity=spot so only a pod
            that opts in (toleration + capacity-type=spot selector) lands there.
+Auto Mode (autoMode.enabled): the same pools, labels, taints and limits, on the
+eks.amazonaws.com/v1 NodeClasses (cpu, gpu — gpu-p shares gpu), with
+eks.amazonaws.com/* requirement keys, expireAfter within Auto Mode's 21-day cap, a 1h
+terminationGracePeriod, families Auto Mode does not support dropped, and GPU pools
+consolidated only when empty with a Drifted: 0 budget (a weekly AMI release never rolls
+a running GPU node). karpenter.sh/capacity-type stays pinned on every pool (unset, Auto
+Mode prefers reserved, then spot, then on-demand).
 */ -}}
+{{- $auto := .Values.autoMode.enabled }}
+{{- $keyPrefix := ternary "eks.amazonaws.com" "karpenter.k8s.aws" $auto }}
+{{- $classGroup := ternary "eks.amazonaws.com" "karpenter.k8s.aws" $auto }}
+{{- $classKind := ternary "NodeClass" "EC2NodeClass" $auto }}
+{{- $expireAfter := ternary .Values.autoMode.expireAfter .Values.expireAfter $auto }}
+{{- $gpuGFamilies := .Values.gpuG.instanceFamilies }}
+{{- $gpuPFamilies := .Values.gpuP.instanceFamilies }}
+{{- if $auto }}
+{{- range .Values.autoMode.unsupportedFamilies }}
+{{- $gpuGFamilies = without $gpuGFamilies . }}
+{{- $gpuPFamilies = without $gpuPFamilies . }}
+{{- end }}
+{{- end }}
 {{- if .Values.cpu.enabled }}
 apiVersion: karpenter.sh/v1
 kind: NodePool
@@ -20,10 +40,13 @@ spec:
   template:
     spec:
       nodeClassRef:
-        group: karpenter.k8s.aws
-        kind: EC2NodeClass
+        group: {{ $classGroup }}
+        kind: {{ $classKind }}
         name: cpu
-      expireAfter: {{ .Values.expireAfter }}
+      expireAfter: {{ $expireAfter }}
+      {{- if $auto }}
+      terminationGracePeriod: {{ .Values.autoMode.terminationGracePeriod }}
+      {{- end }}
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -31,10 +54,10 @@ spec:
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["on-demand"]
-        - key: karpenter.k8s.aws/instance-category
+        - key: {{ $keyPrefix }}/instance-category
           operator: In
           values: {{ .Values.cpu.instanceFamilies | toJson }}
-        - key: karpenter.k8s.aws/instance-generation
+        - key: {{ $keyPrefix }}/instance-generation
           operator: Gt
           values: ["{{ .Values.cpu.instanceGeneration }}"]
   # Authoritative capacity cap for the CPU pool. This is the single source of
@@ -60,10 +83,13 @@ spec:
         inference/accelerator: nvidia-g
     spec:
       nodeClassRef:
-        group: karpenter.k8s.aws
-        kind: EC2NodeClass
+        group: {{ $classGroup }}
+        kind: {{ $classKind }}
         name: gpu
-      expireAfter: {{ .Values.expireAfter }}
+      expireAfter: {{ $expireAfter }}
+      {{- if $auto }}
+      terminationGracePeriod: {{ .Values.autoMode.terminationGracePeriod }}
+      {{- end }}
       taints:
         - key: nvidia.com/gpu
           value: "present"
@@ -72,16 +98,20 @@ spec:
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["on-demand"]
-        - key: karpenter.k8s.aws/instance-family
+        - key: {{ $keyPrefix }}/instance-family
           operator: In
-          values: {{ .Values.gpuG.instanceFamilies | toJson }}
+          values: {{ $gpuGFamilies | toJson }}
   # Authoritative GPU cap for the g-tier pool. Kueue's gpu-g flavor nominalQuota
   # (nvidia.com/gpu AND vpc.amazonaws.com/efa) is derived from this SAME value.
   limits:
     nvidia.com/gpu: {{ .Values.gpuG.gpuLimit }}
   disruption:
-    consolidationPolicy: {{ .Values.consolidationPolicy }}
+    consolidationPolicy: {{ ternary "WhenEmpty" .Values.consolidationPolicy $auto }}
     consolidateAfter: 1m
+    {{- if $auto }}
+    budgets:
+      {{- toYaml .Values.autoMode.gpuDisruptionBudgets | nindent 6 }}
+    {{- end }}
 {{- if .Values.gpuP.enabled }}
 ---
 apiVersion: karpenter.sh/v1
@@ -95,10 +125,13 @@ spec:
         inference/accelerator: nvidia-p
     spec:
       nodeClassRef:
-        group: karpenter.k8s.aws
-        kind: EC2NodeClass
-        name: gpu-p
-      expireAfter: {{ .Values.expireAfter }}
+        group: {{ $classGroup }}
+        kind: {{ $classKind }}
+        name: {{ ternary "gpu" "gpu-p" $auto }}
+      expireAfter: {{ $expireAfter }}
+      {{- if $auto }}
+      terminationGracePeriod: {{ .Values.autoMode.terminationGracePeriod }}
+      {{- end }}
       taints:
         # Shared GPU taint (keeps non-GPU pods off) + a DISTINCT high-tier taint so a
         # pod reaches P only by tolerating BOTH — an under-specified GPU pod is repelled
@@ -117,16 +150,20 @@ spec:
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["on-demand"]
-        - key: karpenter.k8s.aws/instance-family
+        - key: {{ $keyPrefix }}/instance-family
           operator: In
-          values: {{ .Values.gpuP.instanceFamilies | toJson }}
+          values: {{ $gpuPFamilies | toJson }}
   # Authoritative GPU cap for the high-tier P pool. Kueue's gpu-multinode flavor
   # nominalQuota is derived from this SAME value.
   limits:
     nvidia.com/gpu: {{ .Values.gpuP.gpuLimit }}
   disruption:
-    consolidationPolicy: {{ .Values.consolidationPolicy }}
+    consolidationPolicy: {{ ternary "WhenEmpty" .Values.consolidationPolicy $auto }}
     consolidateAfter: 1m
+    {{- if $auto }}
+    budgets:
+      {{- toYaml .Values.autoMode.gpuDisruptionBudgets | nindent 6 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.gpuSpot.enabled }}
 ---
@@ -141,10 +178,13 @@ spec:
         inference/capacity: spot
     spec:
       nodeClassRef:
-        group: karpenter.k8s.aws
-        kind: EC2NodeClass
+        group: {{ $classGroup }}
+        kind: {{ $classKind }}
         name: gpu
-      expireAfter: {{ .Values.expireAfter }}
+      expireAfter: {{ $expireAfter }}
+      {{- if $auto }}
+      terminationGracePeriod: {{ .Values.autoMode.terminationGracePeriod }}
+      {{- end }}
       taints:
         # Shared GPU taint + a DISTINCT capacity taint: a pod reaches Spot only by
         # tolerating BOTH (and selecting karpenter.sh/capacity-type=spot). The label
@@ -159,9 +199,9 @@ spec:
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["spot"]
-        - key: karpenter.k8s.aws/instance-family
+        - key: {{ $keyPrefix }}/instance-family
           operator: In
-          values: {{ concat .Values.gpuG.instanceFamilies .Values.gpuP.instanceFamilies | toJson }}
+          values: {{ concat $gpuGFamilies $gpuPFamilies | toJson }}
   # A small cap: the pool is for short tests (template var gpu_spot_capacity).
   limits:
     nvidia.com/gpu: {{ .Values.gpuSpot.gpuLimit }}
@@ -170,4 +210,8 @@ spec:
     # (it is interrupted by AWS at most); an empty Spot node goes away after consolidateAfter.
     consolidationPolicy: WhenEmpty
     consolidateAfter: {{ .Values.gpuSpot.consolidateAfter }}
+    {{- if $auto }}
+    budgets:
+      {{- toYaml .Values.autoMode.gpuDisruptionBudgets | nindent 6 }}
+    {{- end }}
 {{- end }}
