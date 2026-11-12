@@ -35,6 +35,11 @@ nvidia_device_plugin_chart_version = "0.19.3"
 enable_gpu_p_nodepool         = true
 gpu_p_capacity_reservation_id = ""
 
+# --- Spot GPU pool for short tests: every g + p family on Spot, tainted
+# inference/capacity=spot (opt-in only). Off by default; the CR is free until a pod opts in.
+enable_gpu_spot_nodepool = false
+gpu_spot_capacity        = 4
+
 # --- Storage: EBS gp3 default + S3-mount (Mountpoint-for-S3) ---
 mountpoint_s3_csi_version = "v2.7.0-eksbuild.1"
 

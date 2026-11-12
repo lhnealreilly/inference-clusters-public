@@ -533,6 +533,58 @@ def test_gpu_p_nodepool_is_cost_safe_isolated() -> None:
     assert "gpuP.enabled" in karpenter and "var.enable_gpu_p_nodepool" in karpenter
 
 
+def _nodepool(docs: list[dict], name: str) -> dict | None:
+    """The NodePool doc named `name`, or None when it is not rendered."""
+    return next((d for d in docs if d.get("kind") == "NodePool" and d["metadata"]["name"] == name), None)
+
+
+def test_gpu_spot_nodepool_gated_off_by_default() -> None:
+    """The Spot test pool MUST be opt-in: no gpu-spot NodePool unless gpuSpot.enabled, and the
+    engine default (presets) keeps it off; the toggle and its cap come from the template vars."""
+    assert _nodepool(_render_karpenter(), "gpu-spot") is None, "gpu-spot must not render by default"
+    karpenter = _resource((ENGINE / "platform_karpenter.tf").read_text(), "helm_release", "karpenter_nodepools")
+    assert "gpuSpot.enabled" in karpenter and "var.enable_gpu_spot_nodepool" in karpenter
+    assert "gpuSpot.gpuLimit" in karpenter and "var.gpu_spot_capacity" in karpenter
+    presets = (ENGINE / "presets" / "defaults-all.tfvars").read_text()
+    assert re.search(r"^enable_gpu_spot_nodepool\s*=\s*false", presets, re.MULTILINE), "Spot pool default must be off"
+
+
+def test_gpu_spot_nodepool_is_spot_only_and_opt_in() -> None:
+    """When enabled, gpu-spot is Spot-only, spans every g + p family on the gpu NodeClass, and is
+    isolated by a DISTINCT inference/capacity=spot taint on top of the shared GPU taint (an on-demand
+    GPU pod that tolerates only nvidia.com/gpu can never land on it). Small GPU cap; empty nodes only."""
+    docs = _render_karpenter(**{"gpuSpot.enabled": "true", "gpuSpot.gpuLimit": "4"})
+    pool = _nodepool(docs, "gpu-spot")
+    assert pool is not None, "gpu-spot must render when gpuSpot.enabled"
+    spec = pool["spec"]
+    tmpl = spec["template"]["spec"]
+    assert tmpl["nodeClassRef"]["name"] == "gpu", "gpu-spot rides the existing gpu EC2NodeClass"
+    reqs = {r["key"]: r for r in tmpl["requirements"]}
+    assert reqs["karpenter.sh/capacity-type"]["values"] == ["spot"], "gpu-spot must be Spot-only"
+    gpu_g = _nodepool(docs, "gpu-g")
+    gpu_p = _nodepool(docs, "gpu-p")
+    assert gpu_g is not None and gpu_p is not None
+
+    def fams(p: dict) -> list[str]:
+        r = {x["key"]: x for x in p["spec"]["template"]["spec"]["requirements"]}
+        return list(r["karpenter.k8s.aws/instance-family"]["values"])
+
+    assert set(fams(pool)) == set(fams(gpu_g)) | set(fams(gpu_p)), "gpu-spot must allow every g + p family"
+    taints = {(t["key"], t["value"], t["effect"]) for t in tmpl["taints"]}
+    assert ("nvidia.com/gpu", "present", "NoSchedule") in taints
+    assert ("inference/capacity", "spot", "NoSchedule") in taints, "gpu-spot needs its own opt-in taint"
+    assert spec["template"]["metadata"]["labels"].get("inference/capacity") == "spot"
+    assert "inference/accelerator" not in spec["template"]["metadata"]["labels"], (
+        "gpu-spot must not carry the nvidia-g/nvidia-p label (on-demand pods select it)"
+    )
+    assert str(spec["limits"]["nvidia.com/gpu"]) == "4"
+    assert spec["disruption"]["consolidationPolicy"] == "WhenEmpty", "a running test is never consolidated away"
+    # the on-demand pools stay on-demand
+    for p in (gpu_g, gpu_p):
+        r = {x["key"]: x for x in p["spec"]["template"]["spec"]["requirements"]}
+        assert r["karpenter.sh/capacity-type"]["values"] == ["on-demand"]
+
+
 # --- Local-chart file-edit detection ---
 
 

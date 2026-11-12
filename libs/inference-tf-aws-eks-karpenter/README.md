@@ -97,6 +97,10 @@ This project:
   small **bootstrap** managed node group that hosts the platform components
 - installs **Karpenter** and node pools so GPU/CPU capacity is provisioned on demand over
   **self-managed nodes**, with an optional dedicated GPU (`p`-family) node pool
+- optionally adds a **Spot GPU node pool for short tests** (`enable_gpu_spot_nodepool`, off by
+  default): every g and p family on Spot capacity, capped at `gpu_spot_capacity` GPUs, tainted
+  `inference/capacity=spot` so only pods that opt in land there. Spot nodes can be reclaimed
+  with 2 minutes' notice (Karpenter replaces them on another Spot GPU): not for production
 - installs the **NVIDIA device plugin** and **DCGM exporter**, with a
   **kube-prometheus-stack** (Prometheus + Alertmanager) for GPU/cluster monitoring, with
   **Grafana** dashboards as an opt-in (`enable_grafana`; AGPL-3.0, see
@@ -218,7 +222,7 @@ project for descriptions and recommended values. Grouped by concern:
 | Networking | `enable_nat_gateway` |
 | Bootstrap node group | `bootstrap_instance_types`, `bootstrap_desired_size`, `bootstrap_min_size`, `bootstrap_max_size` |
 | Access | `admin_role_names`, `admin_user_names` |
-| Autoscaling / Karpenter | `karpenter_version`, `cluster_autoscaler_chart_version`, `enable_gpu_p_nodepool`, `gpu_p_capacity_reservation_id`, `gpu_parallel_image_pull`, `cpu_capacity`, `memory_capacity` |
+| Autoscaling / Karpenter | `karpenter_version`, `cluster_autoscaler_chart_version`, `enable_gpu_p_nodepool`, `gpu_p_capacity_reservation_id`, `enable_gpu_spot_nodepool`, `gpu_spot_capacity`, `gpu_parallel_image_pull`, `cpu_capacity`, `memory_capacity` |
 | GPU + monitoring | `nvidia_device_plugin_version`, `nvidia_device_plugin_chart_version`, `nvidia_dcgm_exporter_version`, `dcgm_exporter_chart_version`, `kube_prometheus_stack_chart_version`, `enable_grafana`, `grafana_version`, `prometheus_retention`, `prometheus_memory_limit`, `enable_container_insights`, `metrics_server_chart_version` |
 | Autoscaling operators | `keda_chart_version`, `kro_chart_version` |
 | Batch / multi-node | `enable_lws`, `lws_chart_version`, `enable_kueue`, `kueue_chart_version`, `kueue_cluster_queue_name`, `gpu_g_capacity`, `gpu_p_capacity`, `kueue_gpu_lending_limit`, `enable_efa`, `efa_device_plugin_chart_version`, `efa_device_plugin_image_tag` |

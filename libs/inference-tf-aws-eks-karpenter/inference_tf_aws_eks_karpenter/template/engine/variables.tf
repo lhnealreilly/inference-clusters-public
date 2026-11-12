@@ -308,6 +308,32 @@ variable "enable_gpu_p_nodepool" {
   type        = bool
 }
 
+variable "enable_gpu_spot_nodepool" {
+  description = <<-EOT
+    Whether to install the Spot GPU NodePool gpu-spot (short tests and evaluations).
+
+    It allows every GPU family of the g and p pools on Spot capacity, on the
+    existing gpu EC2NodeClass. It carries the taint inference/capacity=spot, so only
+    pods that tolerate it land there; the pool CR costs nothing until such a pod is
+    scheduled. Spot nodes can be reclaimed with 2 minutes' notice: not for production.
+
+    Recommended: false
+  EOT
+  type        = bool
+}
+
+variable "gpu_spot_capacity" {
+  description = <<-EOT
+    Max GPUs the Spot GPU NodePool gpu-spot may provision (its spec.limits).
+
+    Only read when enable_gpu_spot_nodepool is true. Keep it small: the pool is for
+    short tests, and each Spot GPU node counts against the Spot G/VT and P vCPU quotas.
+
+    Recommended: 4
+  EOT
+  type        = number
+}
+
 variable "gpu_p_capacity_reservation_id" {
   description = <<-EOT
     An optional On-Demand Capacity Reservation (ODCR) id to pin the gpu-p pool to.

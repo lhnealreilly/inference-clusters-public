@@ -248,12 +248,16 @@ resource "helm_release" "karpenter_nodepools" {
     # opts in (nvidia-p label + taint). ODCR id pins it to a reservation if set.
     { name = "gpuP.enabled", value = tostring(var.enable_gpu_p_nodepool) },
     { name = "gpuP.capacityReservationId", value = var.gpu_p_capacity_reservation_id },
+    # Spot GPU pool for short tests (gated). Opt-in only: the CR is inert until a pod
+    # tolerates inference/capacity=spot. Families = gpuG + gpuP families (one source).
+    { name = "gpuSpot.enabled", value = tostring(var.enable_gpu_spot_nodepool) },
     # Capacity caps → NodePool spec.limits. These SAME values derive the Kueue
     # flavor nominalQuota (platform_kueue.tf), so admission never exceeds capacity.
     { name = "cpu.cpuLimit", value = tostring(var.cpu_capacity) },
     { name = "cpu.memoryLimit", value = var.memory_capacity },
     { name = "gpuG.gpuLimit", value = tostring(var.gpu_g_capacity) },
     { name = "gpuP.gpuLimit", value = tostring(var.gpu_p_capacity) },
+    { name = "gpuSpot.gpuLimit", value = tostring(var.gpu_spot_capacity) },
     # Toggles the containerd parallel-pull block in the gpu/gpu-p EC2NodeClass userData.
     { name = "gpuParallelPull.enabled", value = tostring(var.gpu_parallel_image_pull) },
     # Chart content hash so editing a chart file triggers a re-apply (see main.tf).

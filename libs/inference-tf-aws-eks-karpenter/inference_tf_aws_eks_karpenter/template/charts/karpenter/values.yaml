@@ -60,6 +60,22 @@ gpuP:
   #    README to backfill idle GPUs with gpu-g work.)
   capacityReservationId: ""
 
+# -- Spot GPU NodePool for SHORT TESTS (gpu-spot). Gated, off by default. Spot capacity
+#    across EVERY GPU family above (gpuG.instanceFamilies + gpuP.instanceFamilies, so the
+#    two lists stay the one source), on the existing gpu EC2NodeClass. Karpenter's
+#    price-capacity-optimized choice then picks across all those pools, and its
+#    interruption queue replaces a reclaimed node (2 min notice) on another Spot GPU.
+#    COST-SAFE ISOLATION: a DISTINCT taint inference/capacity=spot (label of the same
+#    key/value) ON TOP of the shared GPU taint, so only pods that tolerate it AND select
+#    karpenter.sh/capacity-type=spot land there; no on-demand workload is moved to Spot by
+#    accident. Not for production: Spot nodes can be reclaimed at any time.
+gpuSpot:
+  enabled: false
+  # -- spec.limits nvidia.com/gpu: keep it small, this pool is for tests.
+  gpuLimit: "4"
+  # -- Empty Spot nodes go away fast (a test pod is deleted -> the node follows).
+  consolidateAfter: 1m
+
 # -- MIG / time-slicing (device-plugin seams, NOT day-1):
 #    MIG (fast-follow) partitions one A100/H100 into up to 7 isolated slices — the
 #    right lever for packing many small models onto one P node. Time-slicing

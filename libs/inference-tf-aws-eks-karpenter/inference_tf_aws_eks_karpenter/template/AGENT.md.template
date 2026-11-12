@@ -250,6 +250,7 @@ several pods bin-pack onto one node.
 |---|---|---|---|
 | **g** (default) | `inference/accelerator: nvidia-g` | `nvidia.com/gpu=present:NoSchedule` | g5/g6/g6e/g7 (A10G / L4 / L40S) |
 | **p** (high-end) | `inference/accelerator: nvidia-p` | `nvidia.com/gpu=present:NoSchedule` **and** `inference/gpu-tier=high:NoSchedule` | p4d/p5/p5en (A100 / H100 / H200) |
+| **spot** (tests, opt-in) | `karpenter.sh/capacity-type: spot` | `nvidia.com/gpu=present:NoSchedule` **and** `inference/capacity=spot:NoSchedule` | every g + p family, Spot only (gated by `enable_gpu_spot_nodepool`) |
 
 ```yaml
 # a g-tier pod (most inference)
@@ -270,6 +271,19 @@ lands on (and provisions) an expensive P node ONLY when it explicitly opts in on
 axes. A GPU pod that forgets the P selector falls to the cheaper g pool — a P node is
 never spun up by accident. The P pool is gated by `enable_gpu_p_nodepool` (default on;
 the pool definition is inert until a pod opts in).
+
+```yaml
+# a Spot test pod (short tests only: can be reclaimed with 2 min notice) — opts in on capacity-type AND the taint
+nodeSelector: { karpenter.sh/capacity-type: spot }
+tolerations:
+  - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+  - { key: inference/capacity, operator: Equal, value: spot, effect: NoSchedule }
+```
+
+**Spot for tests:** with `enable_gpu_spot_nodepool = true` the `gpu-spot` pool allows Spot
+capacity across every g and p family (capped at `gpu_spot_capacity` GPUs). Karpenter picks
+the pool by price and capacity, and its interruption queue moves a reclaimed pod to another
+Spot GPU (typically 5-15 min down). Never for production: keep serving on `gpu-g`/`gpu-p`.
 
 **Seams (not default):**
 - **ODCR** — P on-demand capacity is scarce (you may hit `InsufficientInstanceCapacity`).
