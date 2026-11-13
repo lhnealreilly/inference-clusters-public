@@ -212,7 +212,7 @@ class TestAutoModeCluster(unittest.TestCase):
     def test_dcgm_selects_nvidia_nodes_by_auto_mode_label(self) -> None:
         dcgm = _resource((ENGINE / "platform_prometheus.tf").read_text(), "helm_release", "dcgm_exporter")
         self.assertIn("eks.amazonaws.com/instance-gpu-manufacturer", dcgm)
-        self.assertIn('value = "nvidia"', dcgm)
+        self.assertIn('values = ["nvidia"]', dcgm)
 
     def test_cleanup_scripts_include_managed_resources_on_auto_mode(self) -> None:
         drain = _strip_tftpl_if((ENGINE / "local-destroy-cleanup.sh.tftpl").read_text(), "auto_mode", keep=True)

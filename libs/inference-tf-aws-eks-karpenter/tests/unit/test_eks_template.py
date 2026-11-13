@@ -333,7 +333,7 @@ def test_platform_images_pinned_or_vendored() -> None:
     # (a tolerate-all DaemonSet crashloops on CPU nodes) with a scraped ServiceMonitor.
     dcgm = _resource((ENGINE / "platform_prometheus.tf").read_text(), "helm_release", "dcgm_exporter")
     assert 'aws_ecr_repository.vendored["dcgm_exporter"]' in dcgm, "DCGM release must pull the vendored ECR image"
-    assert "nodeSelector.inference/accelerator" in dcgm and "nvidia.com/gpu" in dcgm, "DCGM must be GPU-nodes-only"
+    assert '"inference/accelerator" = "nvidia-g"' in dcgm and "nvidia.com/gpu" in dcgm, "DCGM must be GPU-nodes-only"
     assert "serviceMonitor.additionalLabels.release" in dcgm, "DCGM ServiceMonitor must carry the release label"
 
     prom = _resource((ENGINE / "platform_prometheus.tf").read_text(), "helm_release", "kube_prometheus_stack")
