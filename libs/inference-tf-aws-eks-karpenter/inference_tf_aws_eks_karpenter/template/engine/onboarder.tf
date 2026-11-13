@@ -123,7 +123,8 @@ module "onboarder" {
 
   depends_on = [null_resource.workload_repo_cleanup]
 
-  project_name = local.onboarder_name
+  # inline (not the local) so the plan's references show the name derives from the cluster name prefix
+  project_name = "${local.resource_name_prefix}-onboarder"
   # LARGE (16 GiB / 8 vCPU) suffices: the S3 weight copy is server-side (UploadPartCopy —
   # S3 moves the bytes internally), so the job holds no weight bytes in RAM and isn't
   # NIC-bound. A larger tier does NOT help — CodeBuild caps per-instance S3 bandwidth

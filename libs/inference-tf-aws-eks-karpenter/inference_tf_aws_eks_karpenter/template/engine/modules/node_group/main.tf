@@ -15,7 +15,8 @@
 # disk_size declared here because the node group config prohibits it
 # once a launch template is attached.
 resource "aws_launch_template" "this" {
-  name_prefix = "${var.node_group_name}-"
+  # launch template names are per-account: under the cluster name, like every other account-scoped name
+  name_prefix = "${var.cluster_name}-${var.node_group_name}-"
 
   block_device_mappings {
     device_name = "/dev/xvda"

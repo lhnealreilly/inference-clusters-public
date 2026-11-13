@@ -4,19 +4,18 @@
 # NO_SOURCE and env-driven; callers pass per-run source/dest via start-build
 # environment-variable overrides.
 
-data "aws_iam_policy_document" "trust" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["codebuild.amazonaws.com"]
-    }
-  }
-}
-
+# The trust is a literal (not a data source): callers pass depends_on, which defers a data source to apply, so
+# the role's trust would be unknown at plan time and plan-time trust review (JSC runner checks) can't verify it.
 resource "aws_iam_role" "this" {
-  name                 = "${var.project_name}-codebuild"
-  assume_role_policy   = data.aws_iam_policy_document.trust.json
+  name = "${var.project_name}-codebuild"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "codebuild.amazonaws.com" }
+    }]
+  })
   permissions_boundary = var.permissions_boundary
   tags                 = var.combined_tags
 }

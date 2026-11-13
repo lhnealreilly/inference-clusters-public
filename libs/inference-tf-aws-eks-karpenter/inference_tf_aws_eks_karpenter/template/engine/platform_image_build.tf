@@ -65,7 +65,8 @@ module "image_build" {
 
   depends_on = [null_resource.workload_repo_cleanup]
 
-  project_name = local.image_build_name
+  # inline (not the local) so the plan's references show the name derives from the cluster name prefix
+  project_name = "${local.resource_name_prefix}-image-build"
   # Push target: the same workload/* repos the onboarder vendors into.
   ecr_repository_arns = [local.workload_repo_arn]
   extra_policy_json   = data.aws_iam_policy_document.image_build_extra.json
