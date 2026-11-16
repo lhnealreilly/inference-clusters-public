@@ -20,8 +20,13 @@ resource "aws_eks_cluster" "this" {
   # pools: they are unbounded, unlabeled and cannot be limited; the template ships its
   # own NodeClasses/NodePools (charts/karpenter). node_role_arn is omitted: "Create an
   # EKS cluster with both nodePools and nodeRoleArn values empty".
-  # bootstrap_self_managed_addons stays at its default (true): the platform node group
-  # still needs vpc-cni / kube-proxy / coredns.
+  # EKS refuses Auto Mode with bootstrap_self_managed_addons = true ("When EKS Auto Mode is
+  # enabled, bootstrapSelfManagedAddons must be set to false"). The platform node group's
+  # vpc-cni / kube-proxy / coredns are installed as managed add-ons (eks_addons.tf), so
+  # nothing depends on the self-managed bootstrap. null keeps the provider default (true)
+  # for the non-Auto variant, so existing clusters see no diff.
+  bootstrap_self_managed_addons = var.enable_auto_mode ? false : null
+
   dynamic "compute_config" {
     for_each = var.enable_auto_mode ? [1] : []
     content {
