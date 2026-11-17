@@ -128,7 +128,9 @@ resource "aws_eks_addon" "ebs_csi_driver" {
     service_account = "ebs-csi-controller-sa"
   }
 
-  depends_on = [aws_eks_addon.pod_identity_agent]
+  # wait for the system node group: the controller Deployment can not schedule before a node joins, and the
+  # managed add-on then sits DEGRADED until the create times out (preflight-live: ebs/s3-csi/cloudwatch)
+  depends_on = [aws_eks_addon.pod_identity_agent, time_sleep.wait_for_nodes]
 }
 
 # Mountpoint-for-S3 CSI driver — mounts s3://<bucket>/models as a read-only POSIX
@@ -157,7 +159,9 @@ resource "aws_eks_addon" "s3_csi_driver" {
     service_account = "s3-csi-driver-sa"
   }
 
-  depends_on = [aws_eks_addon.pod_identity_agent]
+  # wait for the system node group: the controller Deployment can not schedule before a node joins, and the
+  # managed add-on then sits DEGRADED until the create times out (preflight-live: ebs/s3-csi/cloudwatch)
+  depends_on = [aws_eks_addon.pod_identity_agent, time_sleep.wait_for_nodes]
 }
 
 # CloudWatch Observability / Container Insights — cluster-wide by design: the CloudWatch
@@ -205,5 +209,7 @@ resource "aws_eks_addon" "cw_observability" {
     service_account = "cloudwatch-agent"
   }
 
-  depends_on = [aws_eks_addon.pod_identity_agent]
+  # wait for the system node group: the controller Deployment can not schedule before a node joins, and the
+  # managed add-on then sits DEGRADED until the create times out (preflight-live: ebs/s3-csi/cloudwatch)
+  depends_on = [aws_eks_addon.pod_identity_agent, time_sleep.wait_for_nodes]
 }
