@@ -10,7 +10,8 @@
 #     (resources "*"), since each RGD version adds a kind. ResourceGraphDefinitions are
 #     cluster-scoped, and a namespaced Role can never grant a cluster-scoped resource,
 #     so admins keep sole control of RGDs;
-#   - InferencePools, PodMonitors/ServiceMonitors and KEDA ScaledObjects.
+#   - InferencePools, PodMonitors/ServiceMonitors and KEDA ScaledObjects;
+#   - read-only: pods (+ log), events, services, and apps deployments / replicasets (the status read).
 # Optional (var.deploy_role_edit_policy): AmazonEKSEditPolicy scoped to the same
 # namespaces, for core/apps kinds. Never cluster-admin, never cluster scope.
 #
@@ -89,6 +90,14 @@ resource "kubernetes_role_v1" "deploy" {
   rule {
     api_groups = [""]
     resources  = ["pods", "pods/log", "events", "services"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  # Read the Deployments KRO renders (and their ReplicaSets) for the status read: rollout, available replicas.
+  # Read-only, this namespace only: no create / patch / delete, no exec, no secrets, nothing cluster-scoped.
+  rule {
+    api_groups = ["apps"]
+    resources  = ["deployments", "replicasets"]
     verbs      = ["get", "list", "watch"]
   }
 
