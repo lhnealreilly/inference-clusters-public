@@ -101,6 +101,14 @@ resource "kubernetes_role_v1" "deploy" {
     verbs      = ["get", "list", "watch"]
   }
 
+  # The Test panel's request and its chat: a POST through the API server's service proxy to the model's own Service
+  # (no listener, no port-forward). Namespaced, the proxy subresource only: no exec, no secrets, nothing cluster-wide.
+  rule {
+    api_groups = [""]
+    resources  = ["services/proxy"]
+    verbs      = ["get", "create"]
+  }
+
   depends_on = [
     null_resource.cluster_addons,
     kubernetes_namespace_v1.workload,
