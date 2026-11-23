@@ -12,6 +12,8 @@
 #     so admins keep sole control of RGDs;
 #   - InferencePools, PodMonitors/ServiceMonitors and KEDA ScaledObjects;
 #   - read-only: pods (+ log), events, services, and apps deployments / replicasets (the status read).
+#   - batch Jobs (create / get / list / watch / delete): the console's AIPerf load test runs as a Job in the
+#     namespace and is waited on and read back there (its pod's log via pods/log above).
 # Optional (var.deploy_role_edit_policy): AmazonEKSEditPolicy scoped to the same
 # namespaces, for core/apps kinds. Never cluster-admin, never cluster scope.
 #
@@ -99,6 +101,14 @@ resource "kubernetes_role_v1" "deploy" {
     api_groups = ["apps"]
     resources  = ["deployments", "replicasets"]
     verbs      = ["get", "list", "watch"]
+  }
+
+  # The console's AIPerf load test: one batch Job per run in this namespace, waited on and deleted by the deploy
+  # role; its result is the Job pod's log (pods/log get above). Namespaced Jobs only: no CronJobs, no exec, no secrets.
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs"]
+    verbs      = ["create", "get", "list", "watch", "delete"]
   }
 
   # The Test panel's request and its chat: a POST through the API server's service proxy to the model's own Service

@@ -394,6 +394,29 @@ class TestDeployRole(unittest.TestCase):
         for resource in ("inferencepools", "podmonitors"):
             self.assertIn(resource, role)
 
+    def test_load_test_jobs_are_namespaced_and_bounded(self) -> None:
+        """The console's AIPerf load test runs as a batch Job and reads its pod's log: namespaced Jobs with exactly
+        create/get/list/watch/delete, pods/log read-only; no CronJobs, exec, secrets or escalation verbs."""
+        role = _resource(self.tf, "kubernetes_role_v1", "deploy")
+        self.assertRegex(
+            role,
+            r'api_groups = \["batch"\]\s*resources  = \["jobs"\]\s*'
+            r'verbs      = \["create", "get", "list", "watch", "delete"\]',
+        )
+        self.assertRegex(
+            role, r'resources  = \["pods", "pods/log", "events", "services"\]\s*verbs      = \["get", "list", "watch"\]'
+        )
+        for forbidden in (
+            '"cronjobs"',
+            '"pods/exec"',
+            '"pods/attach"',
+            '"secrets"',
+            '"escalate"',
+            '"bind"',
+            '"impersonate"',
+        ):
+            self.assertNotIn(forbidden, role)
+
 
 class TestProvisioningHooks(unittest.TestCase):
     def test_every_iam_role_gets_the_permissions_boundary(self) -> None:
