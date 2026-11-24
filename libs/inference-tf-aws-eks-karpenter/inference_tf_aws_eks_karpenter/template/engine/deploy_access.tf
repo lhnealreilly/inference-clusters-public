@@ -14,8 +14,11 @@
 #   - read-only: pods (+ log), events, services, and apps deployments / replicasets (the status read).
 #   - batch Jobs (create / get / list / watch / delete): the console's AIPerf load test runs as a Job in the
 #     namespace and is waited on and read back there (its pod's log via pods/log above).
+#   - one cluster-scoped exception, read-only: get / list / watch on Karpenter NodePools and NodeClaims and
+#     Auto Mode NodeClasses (`jsc-deploy-capacity-read`), so the status read can say why a pod gets no node
+#     (pool limit, a claim stuck launching, a NodeClass not Ready). No write verb, no other cluster-scoped kind.
 # Optional (var.deploy_role_edit_policy): AmazonEKSEditPolicy scoped to the same
-# namespaces, for core/apps kinds. Never cluster-admin, never cluster scope.
+# namespaces, for core/apps kinds. Never cluster-admin, never a cluster-scoped write.
 #
 # One mechanism for both callers (push path and the UI-created cluster flow): set
 # var.deploy_role_arn. Empty = nothing here is created.
@@ -152,4 +155,55 @@ resource "kubernetes_role_binding_v1" "deploy" {
     null_resource.cluster_addons,
     kubernetes_namespace_v1.workload,
   ]
+}
+
+# Read-only capacity state (cluster-scoped kinds, so a ClusterRole; get / list / watch only).
+resource "kubernetes_cluster_role_v1" "deploy_capacity_read" {
+  count = local.deploy_enabled ? 1 : 0
+
+  metadata {
+    name = "${local.deploy_group}-capacity-read"
+    labels = {
+      "app.kubernetes.io/managed-by" = "jupyter-deploy"
+    }
+  }
+
+  rule {
+    api_groups = ["karpenter.sh"]
+    resources  = ["nodepools", "nodeclaims"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  rule {
+    api_groups = ["eks.amazonaws.com"]
+    resources  = ["nodeclasses"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  depends_on = [null_resource.cluster_addons]
+}
+
+resource "kubernetes_cluster_role_binding_v1" "deploy_capacity_read" {
+  count = local.deploy_enabled ? 1 : 0
+
+  metadata {
+    name = "${local.deploy_group}-capacity-read"
+    labels = {
+      "app.kubernetes.io/managed-by" = "jupyter-deploy"
+    }
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role_v1.deploy_capacity_read[0].metadata[0].name
+  }
+
+  subject {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Group"
+    name      = local.deploy_group
+  }
+
+  depends_on = [null_resource.cluster_addons]
 }
